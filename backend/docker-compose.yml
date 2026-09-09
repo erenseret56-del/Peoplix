@@ -1,0 +1,48 @@
+version: '3.9'
+
+services:
+  # ===================================
+  # PEOPLIX API Server
+  # ===================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - TRUST_PROXY=${TRUST_PROXY:-true}
+      - DATABASE_URL=${DATABASE_URL}
+      - DB_NAME=${DB_NAME:-peoplix}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-24h}
+      - RETELL_API_KEY=${RETELL_API_KEY}
+      - RETELL_AGENT_ID=${RETELL_AGENT_ID}
+      - RETELL_LLM_ID=${RETELL_LLM_ID}
+      - RETELL_WEBHOOK_SECRET=${RETELL_WEBHOOK_SECRET}
+      - RETELL_TWILIO_TERMINATION_URI=${RETELL_TWILIO_TERMINATION_URI}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_COUNTRY_CODE=${TWILIO_COUNTRY_CODE:-US}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:5173}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX:-1000}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-60000}
+    restart: unless-stopped
+    networks:
+      - peoplix-network
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: '0.5'
+
+networks:
+  peoplix-network:
+    driver: bridge

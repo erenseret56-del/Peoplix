@@ -1,0 +1,17 @@
+node_modules
+.env
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist-info
+__pycache__
+.pytest_cache
+.venv
+venv
+chromadb
+*.log
+.DS_Store
