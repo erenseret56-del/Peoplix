@@ -28,6 +28,14 @@ export const cachedGet = async (
 
 const API_BASE_URL = (import.meta.env.VITE_BASE_URL as string | undefined) || window.location.origin;
 
+const getApiErrorMessage = (error: unknown, fallback: string) => {
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return fallback;
+};
+
 const axiosInstance = axios.create({
   baseURL: API_BASE_URL.replace(/\/$/, ""),
   headers: {
@@ -77,12 +85,12 @@ axiosInstance.interceptors.response.use(
 
     // If login API fails → don't redirect
     if (config.url?.includes("/auth/login")) {
-      return Promise.reject(
+      return Promise.reject(new Error(getApiErrorMessage(
         error.response?.data?.error?.message ||
-        error.response?.data?.detail ||
-          error.response?.data?.message ||
-          "Login failed",
-      );
+          error.response?.data?.detail ||
+          error.response?.data?.message,
+        "Login failed",
+      )));
     }
 
     // Unauthorized (only if token exists)
@@ -105,12 +113,12 @@ axiosInstance.interceptors.response.use(
       toast.error("Server error. Please try again later.");
     }
 
-    return Promise.reject(
+    return Promise.reject(new Error(getApiErrorMessage(
       error.response?.data?.error?.message ||
-      error.response?.data?.detail ||
-        error.response?.data?.message ||
-        error.message,
-    );
+        error.response?.data?.detail ||
+        error.response?.data?.message,
+      error.message,
+    )));
   },
 );
 
