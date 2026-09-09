@@ -18,9 +18,11 @@ export async function addNumberToSipTrunk(phoneNumberSid: string) {
     throw new Error('TWILIO_SIP_TRUNK_SID is not configured. The number was not assigned.');
   }
 
-  await getTwilioClient().trunking.v1
-    .trunks(config.twilio.sipTrunkSid)
-    .phoneNumbers.create({ phoneNumberSid });
+  const trunk = getTwilioClient().trunking.v1.trunks(config.twilio.sipTrunkSid);
+  const attachedNumbers = await trunk.phoneNumbers.list({ limit: 1000 });
+  if (attachedNumbers.some((number) => number.phoneNumberSid === phoneNumberSid)) return;
+
+  await trunk.phoneNumbers.create({ phoneNumberSid });
 }
 
 export async function syncNumbersToSipTrunk() {
