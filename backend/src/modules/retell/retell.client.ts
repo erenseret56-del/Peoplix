@@ -55,6 +55,11 @@ export interface RetellCallSummary {
   duration_ms?: number;
 }
 
+export interface RetellPhoneNumberResponse {
+  phone_number: string;
+  [key: string]: unknown;
+}
+
 /**
  * Retell AI HTTP Client
  *
@@ -88,8 +93,16 @@ class RetellClient {
     });
 
     if (!res.ok) {
-      logger.error({ status: res.status, url }, `Retell API error: ${res.status}`);
-      throw new Error(`Retell API error: ${res.status}`);
+      const responseText = await res.text();
+      let message = responseText;
+      try {
+        const responseBody = JSON.parse(responseText) as { message?: string; error?: string };
+        message = responseBody.message || responseBody.error || responseText;
+      } catch {
+      }
+      const detail = message.trim() || res.statusText;
+      logger.error({ status: res.status, url, message: detail }, `Retell API error: ${res.status}`);
+      throw new Error(`Retell API error: ${res.status} - ${detail}`);
     }
 
     return res.json() as Promise<T>;
@@ -130,6 +143,16 @@ class RetellClient {
 
   async listAgents(): Promise<RetellAgentResponse[]> {
     return this.request<RetellAgentResponse[]>('GET', '/list-agents');
+  }
+
+  async listPhoneNumbers(): Promise<RetellPhoneNumberResponse[]> {
+    const response = await this.request<RetellPhoneNumberResponse[] | { phone_numbers?: RetellPhoneNumberResponse[] }>('GET', '/list-phone-numbers');
+    return Array.isArray(response) ? response : response.phone_numbers || [];
+  }
+
+  async isPhoneNumberImported(phoneNumber: string): Promise<boolean> {
+    const phoneNumbers = await this.listPhoneNumbers();
+    return phoneNumbers.some((number) => number.phone_number === phoneNumber);
   }
 
   async importPhoneNumber(phoneNumber: string, terminationUri: string, agentId: string, nickname: string, inboundWebhookUrl?: string): Promise<Record<string, unknown>> {

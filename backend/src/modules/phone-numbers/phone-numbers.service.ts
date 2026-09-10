@@ -20,7 +20,7 @@ export async function addNumberToSipTrunk(phoneNumberSid: string) {
 
   const trunk = getTwilioClient().trunking.v1.trunks(config.twilio.sipTrunkSid);
   const attachedNumbers = await trunk.phoneNumbers.list({ limit: 1000 });
-  if (attachedNumbers.some((number) => number.phoneNumberSid === phoneNumberSid)) return;
+  if (attachedNumbers.some((number) => number.sid === phoneNumberSid)) return;
 
   await trunk.phoneNumbers.create({ phoneNumberSid });
 }
@@ -61,13 +61,16 @@ async function bindNumberToCompanyAgent(companyId: string, phoneNumber: string) 
     throw new Error('The configured Retell agent could not be found.');
   }
 
-  await retellClient.importPhoneNumber(
-    phoneNumber,
-    config.retell.twilioTerminationUri,
-    agentId,
-    `${phoneNumber} - ${agent.agent_name}`,
-    config.retell.inboundWebhookUrl,
-  );
+  const alreadyImported = await retellClient.isPhoneNumberImported(phoneNumber);
+  if (!alreadyImported) {
+    await retellClient.importPhoneNumber(
+      phoneNumber,
+      config.retell.twilioTerminationUri,
+      agentId,
+      `${phoneNumber} - ${agent.agent_name}`,
+      config.retell.inboundWebhookUrl,
+    );
+  }
 
   return agentId;
 }
@@ -159,11 +162,28 @@ export class PhoneNumbersService {
     if (!twilioNumber) throw new NotFoundError('Available Twilio number not found');
 
     const alreadyAssigned = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({ twilio_sid: twilioSid, status: 'assigned' });
-    if (alreadyAssigned) throw new Error('This number is already assigned to another client.');
+    if (alreadyAssigned && String(alreadyAssigned.company_id) !== companyId) {
+      throw new Error('This number is already assigned to another client.');
+    }
 
     const now = new Date();
     await addNumberToSipTrunk(twilioNumber.sid);
     await bindNumberToCompanyAgent(companyId, twilioNumber.phoneNumber);
+    if (alreadyAssigned) {
+      await getCollection(Collections.PHONE_ASSIGNMENTS).updateOne(
+        { _id: alreadyAssigned._id },
+        { $set: { phone_number: twilioNumber.phoneNumber, updated_at: now } },
+      );
+      return {
+        id: alreadyAssigned._id!.toString(),
+        phone_number: twilioNumber.phoneNumber,
+        twilio_sid: twilioSid,
+        company_id: companyId,
+        company_name: company.name,
+        assigned_at: alreadyAssigned.assigned_at,
+        reused: true,
+      };
+    }
     const released = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({ twilio_sid: twilioSid, status: 'available' });
     if (released) {
       await getCollection(Collections.PHONE_ASSIGNMENTS).updateOne(
