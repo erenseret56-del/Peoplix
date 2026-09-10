@@ -2,7 +2,7 @@ import { companiesRepository } from './companies.repository.js';
 import { authRepository } from '../auth/auth.repository.js';
 import { authService } from '../auth/auth.service.js';
 import { invalidateTenantCache } from '../../middleware/tenant.js';
-import { ConflictError, NotFoundError } from '../../middleware/errorHandler.js';
+import { ConflictError, NotFoundError, ValidationError } from '../../middleware/errorHandler.js';
 import { CompanyStatus, UserRole } from '../../types/index.js';
 import { logger } from '../../config/logger.js';
 import { config } from '../../config/env.js';
@@ -164,44 +164,61 @@ export class CompaniesService {
   }
 
   async delete(id: string): Promise<void> {
-    const company = await getCollection(Collections.COMPANIES).findOne({ _id: new ObjectId(id) });
+    if (!ObjectId.isValid(id)) throw new ValidationError('Invalid company id');
+
+    const company = await companiesRepository.findById(id);
     if (!company) throw new NotFoundError('Company not found');
 
     const companyUsers = await getCollection(Collections.COMPANY_USERS)
       .find({ company_id: id }, { projection: { user_id: 1 } })
       .toArray();
+    const userIds = companyUsers.map((user) => user.user_id).filter(Boolean);
+    const sharedUsers = userIds.length
+      ? await getCollection(Collections.COMPANY_USERS)
+        .find({ user_id: { $in: userIds }, company_id: { $ne: id }, status: 'active' }, { projection: { user_id: 1 } })
+        .toArray()
+      : [];
+    const sharedUserIds = new Set(sharedUsers.map((user) => user.user_id));
+    const userIdsToDelete = userIds.filter((userId) => !sharedUserIds.has(userId));
     const callLogs = await getCollection(Collections.CALL_LOGS)
       .find({ company_id: id }, { projection: { _id: 1 } })
       .toArray();
 
-    await Promise.all([
-      getCollection(Collections.PHONE_ASSIGNMENTS).updateMany(
-        { company_id: id, status: 'assigned' },
-        { $set: { company_id: null, status: 'available', released_at: new Date(), updated_at: new Date() } },
-      ),
-      getCollection(Collections.NUMBER_PROFILES).deleteMany({ company_id: id }),
-      getCollection(Collections.COMPANY_USERS).deleteMany({ company_id: id }),
-      getCollection(Collections.EMPLOYEES).deleteMany({ company_id: id }),
-      getCollection(Collections.DEPARTMENTS).deleteMany({ company_id: id }),
-      getCollection(Collections.DESIGNATIONS).deleteMany({ company_id: id }),
-      getCollection(Collections.CUSTOMERS).deleteMany({ company_id: id }),
-      getCollection(Collections.DOCUMENTS).deleteMany({ company_id: id }),
-      getCollection(Collections.FAQS).deleteMany({ company_id: id }),
-      getCollection(Collections.POLICIES).deleteMany({ company_id: id }),
-      getCollection(Collections.RETELL_AGENTS).deleteMany({ company_id: id }),
-      getCollection(AI_CONFIG_COLLECTION).deleteMany({ company_id: id }),
-      getCollection(Collections.CALL_LOGS).deleteMany({ company_id: id }),
-      getCollection(Collections.AUDIT_LOGS).deleteMany({ company_id: id }),
-      getCollection(Collections.USERS).deleteMany({
-        _id: { $in: companyUsers.map((user) => user.user_id) },
-      }),
-      getCollection(Collections.CALL_TRANSCRIPTS).deleteMany({
-        call_log_id: { $in: callLogs.map((call) => call._id.toString()) },
-      }),
-    ]);
-    await companiesRepository.hardDelete(id);
+    const cleanup = async (step: string, operation: () => Promise<unknown>) => {
+      try {
+        const result = await operation();
+        logger.info({ companyId: id, step }, 'Company deletion step completed');
+        return result;
+      } catch (error) {
+        logger.error({ err: error, companyId: id, step }, 'Company deletion step failed');
+        throw error;
+      }
+    };
+
+    await cleanup('release phone assignments', () => getCollection(Collections.PHONE_ASSIGNMENTS).updateMany(
+      { company_id: id },
+      { $set: { company_id: null, status: 'available', released_at: new Date(), updated_at: new Date() } },
+    ));
+    await cleanup('remove number profiles', () => getCollection(Collections.NUMBER_PROFILES).deleteMany({ company_id: id }));
+    await cleanup('remove call transcripts', () => getCollection(Collections.CALL_TRANSCRIPTS).deleteMany({
+      call_log_id: { $in: callLogs.map((call) => call._id!.toString()) },
+    }));
+    await cleanup('remove call logs', () => getCollection(Collections.CALL_LOGS).deleteMany({ company_id: id }));
+    await cleanup('remove company users', () => getCollection(Collections.COMPANY_USERS).deleteMany({ company_id: id }));
+    await cleanup('remove user accounts', () => getCollection(Collections.USERS).deleteMany({ _id: { $in: userIdsToDelete } }));
+    await cleanup('remove employees', () => getCollection(Collections.EMPLOYEES).deleteMany({ company_id: id }));
+    await cleanup('remove departments', () => getCollection(Collections.DEPARTMENTS).deleteMany({ company_id: id }));
+    await cleanup('remove designations', () => getCollection(Collections.DESIGNATIONS).deleteMany({ company_id: id }));
+    await cleanup('remove customers', () => getCollection(Collections.CUSTOMERS).deleteMany({ company_id: id }));
+    await cleanup('remove company documents', () => getCollection(Collections.DOCUMENTS).deleteMany({ company_id: id }));
+    await cleanup('remove FAQs', () => getCollection(Collections.FAQS).deleteMany({ company_id: id }));
+    await cleanup('remove policies', () => getCollection(Collections.POLICIES).deleteMany({ company_id: id }));
+    await cleanup('remove company Retell mappings', () => getCollection(Collections.RETELL_AGENTS).deleteMany({ company_id: id }));
+    await cleanup('remove AI configuration', () => getCollection(AI_CONFIG_COLLECTION).deleteMany({ company_id: id }));
+    await cleanup('remove audit logs', () => getCollection(Collections.AUDIT_LOGS).deleteMany({ company_id: id }));
+    await cleanup('remove company', () => companiesRepository.hardDelete(id));
     await invalidateTenantCache(id);
-    logger.info({ companyId: id }, 'Company and all related records permanently deleted');
+    logger.info({ companyId: id, phoneAssignmentsReleased: true }, 'Company and tenant records permanently deleted');
   }
 
   async getStats(companyId: string) {
