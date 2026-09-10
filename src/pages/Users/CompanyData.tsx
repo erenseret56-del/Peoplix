@@ -65,6 +65,9 @@ export default function CompanyData() {
       }
       const modelResponse = await getMyRetellModels(selectedProfile?.id).catch(() => ({ data: [] }));
       setRetellModels(modelResponse.data || []);
+      if (modelResponse.data?.[0]) {
+        setNumberData((current) => ({ ...current, retell_agent_id: modelResponse.data[0].agent_id }));
+      }
     } catch (error) {
       console.error("Failed to load company data:", error);
       toast.error(error instanceof Error ? error.message : "Failed to load company data");
@@ -122,7 +125,7 @@ export default function CompanyData() {
     if (!selectedNumberId || isCallLoading) return;
     setIsCallLoading(true);
     try {
-      const model = retellModels.find((item) => item.agent_id === numberData.retell_agent_id) || retellModels[0];
+      const model = retellModels[0];
       const call = await createCompanyWebCall(selectedNumberId);
       setActiveAgentName(model?.agent_name || "Peoplix AI Agent");
       setIsCallModalOpen(true);

@@ -51,8 +51,10 @@ export async function retellRoutes(fastify: FastifyInstance) {
   fastify.get('/my/models', { preHandler: [authenticateJWT, resolveTenant, requireRole('company_admin')] }, async (request, reply) => {
     const tenantId = getTenantId(request);
     const { assignment_id: assignmentId } = request.query as { assignment_id?: string };
-    const resolvedConfig = await aiConfigService.getResolvedConfig(tenantId);
-    let agentId = resolvedConfig.retell_agent_id;
+    const agentId = config.retell.agentId;
+    if (!agentId) {
+      return reply.status(503).send({ success: false, error: { code: 'NOT_CONFIGURED', message: 'The shared demo Retell agent is not configured.' } });
+    }
     if (assignmentId) {
       if (!ObjectId.isValid(assignmentId)) {
         return reply.status(400).send({ success: false, error: { code: 'INVALID_INPUT', message: 'Invalid phone assignment' } });
@@ -61,8 +63,6 @@ export async function retellRoutes(fastify: FastifyInstance) {
       if (!assignment) {
         return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Phone number does not belong to this company' } });
       }
-      const profile = await getCollection(Collections.NUMBER_PROFILES).findOne({ company_id: tenantId, phone_assignment_id: assignmentId });
-      if (profile?.retell_agent_id) agentId = profile.retell_agent_id;
     }
     const model = await retellClient.getAgent(agentId);
     const models = model?.agent_id ? [model] : [];
@@ -71,8 +71,8 @@ export async function retellRoutes(fastify: FastifyInstance) {
 
   /** GET /api/retell/models - live Retell agents available to super admins */
   fastify.get('/models', { preHandler: [authenticateJWT, requireSuperAdmin] }, async (_request, reply) => {
-    const [models, assignments] = await Promise.all([
-      retellClient.listAgents(),
+    const [model, assignments] = await Promise.all([
+      config.retell.agentId ? retellClient.getAgent(config.retell.agentId) : Promise.resolve(null),
       getCollection(Collections.PHONE_ASSIGNMENTS).find({ status: 'assigned' }).sort({ assigned_at: -1 }).toArray(),
     ]);
     const profiles = await getCollection(Collections.NUMBER_PROFILES).find({}).toArray();
@@ -88,7 +88,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
         retell_agent_id: profile?.retell_agent_id || null,
       };
     }));
-    return reply.send({ success: true, data: { models, numbers } });
+    return reply.send({ success: true, data: { models: model?.agent_id ? [model] : [], numbers } });
   });
 
   fastify.post('/inbound-call', { preHandler: [requireRetellWebhook] }, async (request, reply) => {
@@ -115,6 +115,9 @@ export async function retellRoutes(fastify: FastifyInstance) {
     const body = request.body as { assignment_id?: string; retell_agent_id?: string };
     if (!body.assignment_id || !body.retell_agent_id || !ObjectId.isValid(body.assignment_id)) {
       return reply.status(400).send({ success: false, error: { code: 'INVALID_INPUT', message: 'Assignment ID and Retell agent ID are required' } });
+    }
+    if (!config.retell.agentId || body.retell_agent_id !== config.retell.agentId) {
+      return reply.status(400).send({ success: false, error: { code: 'INVALID_AGENT', message: 'Only the configured demo Retell agent can be assigned.' } });
     }
     const assignment = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({ _id: new ObjectId(body.assignment_id), status: 'assigned' });
     if (!assignment) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Assigned phone number not found' } });
@@ -320,10 +323,12 @@ export async function retellRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ success: false, error: { code: 'INVALID_INPUT', message: 'Invalid phone assignment' } });
       }
 
-      // Load full resolved config from DB — agent ID, dynamic vars, etc.
-      // Falls back to global env vars if per-company config not set
+      // Load company data from DB while keeping the shared demo agent fixed.
       const resolvedConfig = await aiConfigService.getResolvedConfig(tenantId);
-      let agentId = resolvedConfig.retell_agent_id;
+      const agentId = config.retell.agentId;
+      if (!agentId) {
+        return reply.status(503).send({ success: false, error: { code: 'NOT_CONFIGURED', message: 'The shared demo Retell agent is not configured.' } });
+      }
       let dynamicVariables = resolvedConfig.dynamic_variables;
       let phoneAssignmentId: string | undefined;
 
@@ -344,7 +349,6 @@ export async function retellRoutes(fastify: FastifyInstance) {
           company_id: tenantId,
           phone_assignment_id: parsed.data.assignment_id,
         });
-        if (profile?.retell_agent_id) agentId = profile.retell_agent_id;
         dynamicVariables = {
           ...dynamicVariables,
           company_phone: assignment.phone_number,

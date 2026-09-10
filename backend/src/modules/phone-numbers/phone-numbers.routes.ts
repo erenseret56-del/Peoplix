@@ -93,15 +93,27 @@ export async function phoneNumbersRoutes(fastify: FastifyInstance) {
     if (!assignment) throw new ValidationError('Phone number does not belong to this company');
     let bindingWarning: string | null = null;
     if (parsed.data.retell_agent_id) {
-      const model = await retellClient.getAgent(parsed.data.retell_agent_id);
+      if (!config.retell.agentId || parsed.data.retell_agent_id !== config.retell.agentId) {
+        throw new ValidationError('Only the configured demo Retell agent can be used for live calls');
+      }
+      const model = await retellClient.getAgent(config.retell.agentId);
       if (!model?.agent_id) throw new ValidationError('Selected Retell model was not found');
       if (!config.retell.twilioTerminationUri) {
         bindingWarning = 'Phone data saved, but Retell phone binding is not configured yet.';
       } else {
         try {
-          await retellClient.importPhoneNumber(assignment.phone_number, config.retell.twilioTerminationUri, parsed.data.retell_agent_id, `${assignment.phone_number} - ${model.agent_name}`);
-        } catch {
-          bindingWarning = 'Phone data saved, but the Retell phone binding could not be updated.';
+          const nickname = `${assignment.phone_number} - ${model.agent_name}`;
+          if (await retellClient.getPhoneNumber(assignment.phone_number)) {
+            await retellClient.updatePhoneNumber(assignment.phone_number, config.retell.twilioTerminationUri, config.retell.agentId, nickname);
+          } else {
+            await retellClient.importPhoneNumber(assignment.phone_number, config.retell.twilioTerminationUri, config.retell.agentId, nickname);
+          }
+        } catch (error) {
+          if (retellClient.isPhoneNumberAlreadyExistsError(error)) {
+            await retellClient.updatePhoneNumber(assignment.phone_number, config.retell.twilioTerminationUri, config.retell.agentId, `${assignment.phone_number} - ${model.agent_name}`);
+          } else {
+            throw error;
+          }
         }
       }
     }

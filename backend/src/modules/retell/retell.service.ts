@@ -273,11 +273,6 @@ export class RetellService {
       return;
     }
 
-    const agentDoc = await getCollection(Collections.RETELL_AGENTS).findOne({
-      company_id: companyId,
-      retell_agent_id: payload.agent_id,
-    });
-
     const metadataAssignmentId = payload.metadata?.phone_assignment_id;
     const phoneAssignment = metadataAssignmentId && ObjectId.isValid(metadataAssignmentId)
       ? await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({
@@ -291,7 +286,7 @@ export class RetellService {
     await getCollection(Collections.CALL_LOGS).insertOne({
       company_id: companyId,
       retell_call_id: payload.call_id,
-      retell_agent_id: agentDoc?._id?.toString(),
+      retell_agent_id: payload.agent_id,
       caller_phone: payload.from_number,
       from_number: payload.from_number,
       to_number: payload.to_number,
@@ -364,6 +359,7 @@ export class RetellService {
       await getCollection(Collections.CALL_LOGS).insertOne({
         company_id: companyId,
         retell_call_id: payload.call_id,
+        retell_agent_id: payload.agent_id,
         caller_phone: payload.from_number,
         from_number: payload.from_number,
         to_number: payload.to_number,
