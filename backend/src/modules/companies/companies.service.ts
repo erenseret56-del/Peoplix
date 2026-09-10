@@ -197,7 +197,7 @@ export class CompaniesService {
 
     await cleanup('release phone assignments', () => getCollection(Collections.PHONE_ASSIGNMENTS).updateMany(
       { company_id: id },
-      { $set: { company_id: null, status: 'available', released_at: new Date(), updated_at: new Date() } },
+      { $set: { status: 'available', released_at: new Date(), updated_at: new Date() }, $unset: { company_id: '' } },
     ));
     await cleanup('remove number profiles', () => getCollection(Collections.NUMBER_PROFILES).deleteMany({ company_id: id }));
     await cleanup('remove call transcripts', () => getCollection(Collections.CALL_TRANSCRIPTS).deleteMany({
