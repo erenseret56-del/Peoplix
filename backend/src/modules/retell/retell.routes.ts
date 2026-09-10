@@ -48,8 +48,24 @@ async function resolveCompany(callId: string, agentId?: string): Promise<string 
 // ── ROUTES ────────────────────────────────────────────────────────────────────
 export async function retellRoutes(fastify: FastifyInstance) {
 
-  fastify.get('/my/models', { preHandler: [authenticateJWT, resolveTenant, requireRole('company_admin')] }, async (_request, reply) => {
-    const models = await retellClient.listAgents();
+  fastify.get('/my/models', { preHandler: [authenticateJWT, resolveTenant, requireRole('company_admin')] }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    const { assignment_id: assignmentId } = request.query as { assignment_id?: string };
+    const resolvedConfig = await aiConfigService.getResolvedConfig(tenantId);
+    let agentId = resolvedConfig.retell_agent_id;
+    if (assignmentId) {
+      if (!ObjectId.isValid(assignmentId)) {
+        return reply.status(400).send({ success: false, error: { code: 'INVALID_INPUT', message: 'Invalid phone assignment' } });
+      }
+      const assignment = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({ _id: new ObjectId(assignmentId), company_id: tenantId, status: 'assigned' });
+      if (!assignment) {
+        return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Phone number does not belong to this company' } });
+      }
+      const profile = await getCollection(Collections.NUMBER_PROFILES).findOne({ company_id: tenantId, phone_assignment_id: assignmentId });
+      if (profile?.retell_agent_id) agentId = profile.retell_agent_id;
+    }
+    const model = await retellClient.getAgent(agentId);
+    const models = model?.agent_id ? [model] : [];
     return reply.send({ success: true, data: models });
   });
 
@@ -299,33 +315,74 @@ export async function retellRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticateJWT, resolveTenant] },
     async (request, reply) => {
       const tenantId = getTenantId(request);
+      const parsed = z.object({ assignment_id: z.string().optional() }).safeParse(request.body || {});
+      if (!parsed.success) {
+        return reply.status(400).send({ success: false, error: { code: 'INVALID_INPUT', message: 'Invalid phone assignment' } });
+      }
 
       // Load full resolved config from DB — agent ID, dynamic vars, etc.
       // Falls back to global env vars if per-company config not set
       const resolvedConfig = await aiConfigService.getResolvedConfig(tenantId);
+      let agentId = resolvedConfig.retell_agent_id;
+      let dynamicVariables = resolvedConfig.dynamic_variables;
+      let phoneAssignmentId: string | undefined;
+
+      if (parsed.data.assignment_id) {
+        if (!ObjectId.isValid(parsed.data.assignment_id)) {
+          return reply.status(400).send({ success: false, error: { code: 'INVALID_INPUT', message: 'Invalid phone assignment' } });
+        }
+        const assignment = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({
+          _id: new ObjectId(parsed.data.assignment_id),
+          company_id: tenantId,
+          status: 'assigned',
+        });
+        if (!assignment) {
+          return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Phone number does not belong to this company' } });
+        }
+
+        const profile = await getCollection(Collections.NUMBER_PROFILES).findOne({
+          company_id: tenantId,
+          phone_assignment_id: parsed.data.assignment_id,
+        });
+        if (profile?.retell_agent_id) agentId = profile.retell_agent_id;
+        dynamicVariables = {
+          ...dynamicVariables,
+          company_phone: assignment.phone_number,
+          greeting_name: profile?.display_name || dynamicVariables.greeting_name,
+          company_knowledge: [
+            dynamicVariables.company_knowledge,
+            `Phone-specific instructions for ${assignment.phone_number}:`,
+            profile?.description || '',
+            profile?.knowledge_text || '',
+            profile?.knowledge_file_text || '',
+          ].filter(Boolean).join('\n\n').slice(0, 100000),
+        };
+        phoneAssignmentId = parsed.data.assignment_id;
+      }
 
       // Create the call with company-specific dynamic variables
       const webCall = await retellClient.createWebCall(
-        resolvedConfig.retell_agent_id,
+        agentId,
         tenantId,
-        resolvedConfig.dynamic_variables,
+        dynamicVariables,
         {
           welcome_message: resolvedConfig.welcome_message,
+          ...(phoneAssignmentId ? { phone_assignment_id: phoneAssignmentId } : {}),
         }
       );
 
       // Log the call start
       await retellService.handleCallStarted({
         call_id: webCall.call_id,
-        agent_id: resolvedConfig.retell_agent_id,
+        agent_id: agentId,
         call_type: 'web',
-        metadata: { company_id: tenantId },
+        metadata: { company_id: tenantId, ...(phoneAssignmentId ? { phone_assignment_id: phoneAssignmentId } : {}) },
       });
 
       logger.info({
         tenantId,
         callId: webCall.call_id,
-        agentId: resolvedConfig.retell_agent_id,
+        agentId,
         companyName: resolvedConfig.dynamic_variables.company_name,
       }, 'Web call created');
 

@@ -99,9 +99,14 @@ export const uploadMyNumberProfilePdf = async (assignmentId: string, file: File)
   return response.data;
 };
 
-export const getMyRetellModels = async () => {
-  const response = await cachedGet("/api/retell/my/models");
+export const getMyRetellModels = async (assignmentId?: string) => {
+  const response = await cachedGet("/api/retell/my/models", { params: assignmentId ? { assignment_id: assignmentId } : undefined });
   return response.data;
+};
+
+export const createCompanyWebCall = async (assignmentId: string): Promise<{ access_token: string; call_id: string }> => {
+  const response = await axiosInstance.post("/api/retell/create-web-call", { assignment_id: assignmentId });
+  return response.data.data;
 };
 
 export const getCompanyPhoneAssignments = async (companyId: string) => {

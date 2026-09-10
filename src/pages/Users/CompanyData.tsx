@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
-import { FileText, Save, Trash2, Upload, Phone } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { FileText, Save, Trash2, Upload, Phone, PhoneCall } from "lucide-react";
 import toast from "react-hot-toast";
 import { useNavigate, useParams } from "react-router-dom";
+import { RetellWebClient } from "retell-client-js-sdk";
 import {
+  createCompanyWebCall,
   deleteMyDocument,
   getMyDocuments,
   uploadMyDocument,
@@ -11,6 +13,7 @@ import {
   updateMyNumberProfile,
   uploadMyNumberProfilePdf,
 } from "../../api/api";
+import ActiveCallModal from "../../components/LandingPageComponents/ActiveCallModal";
 
 interface CompanyDocument {
   id: string;
@@ -39,6 +42,12 @@ export default function CompanyData() {
   const [savingNumberData, setSavingNumberData] = useState(false);
   const [uploadingNumberPdf, setUploadingNumberPdf] = useState(false);
   const [retellModels, setRetellModels] = useState<{ agent_id: string; agent_name: string }[]>([]);
+  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
+  const [isCallConnected, setIsCallConnected] = useState(false);
+  const [isCallLoading, setIsCallLoading] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [activeAgentName, setActiveAgentName] = useState("Peoplix AI Agent");
+  const sdk = useMemo(() => new RetellWebClient(), []);
 
   const loadData = async () => {
     try {
@@ -46,9 +55,7 @@ export default function CompanyData() {
         getMyDocuments(),
         getMyNumberProfiles(),
       ]);
-      const modelResponse = await getMyRetellModels().catch(() => ({ data: [] }));
       setDocuments(documentResponse.data || []);
-      setRetellModels(modelResponse.data || []);
       const profiles = numberResponse.data || [];
       setNumberProfiles(profiles);
       const selectedProfile = profiles.find((profile: { id: string }) => profile.id === numberId) || profiles[0];
@@ -56,6 +63,8 @@ export default function CompanyData() {
         setSelectedNumberId(selectedProfile.id);
         setNumberData({ display_name: "", retell_agent_id: "", description: "", knowledge_text: "", ...selectedProfile.profile });
       }
+      const modelResponse = await getMyRetellModels(selectedProfile?.id).catch(() => ({ data: [] }));
+      setRetellModels(modelResponse.data || []);
     } catch (error) {
       console.error("Failed to load company data:", error);
       toast.error(error instanceof Error ? error.message : "Failed to load company data");
@@ -67,6 +76,29 @@ export default function CompanyData() {
   useEffect(() => {
     void loadData();
   }, [numberId]);
+
+  useEffect(() => {
+    sdk.on("call_started", () => {
+      setIsCallConnected(true);
+      setIsCallLoading(false);
+    });
+    sdk.on("call_ended", () => {
+      setIsCallModalOpen(false);
+      setIsCallConnected(false);
+      setIsMuted(false);
+    });
+    sdk.on("error", (error) => {
+      console.error("Retell SDK error:", error);
+      toast.error("An error occurred during the call.");
+      setIsCallModalOpen(false);
+      setIsCallLoading(false);
+    });
+    return () => {
+      sdk.off("call_started");
+      sdk.off("call_ended");
+      sdk.off("error");
+    };
+  }, [sdk]);
 
   const selectNumber = (assignmentId: string) => {
     navigate(`/company-data/${assignmentId}`);
@@ -83,6 +115,36 @@ export default function CompanyData() {
       toast.error(error instanceof Error ? error.message : "Failed to save phone-specific data");
     } finally {
       setSavingNumberData(false);
+    }
+  };
+
+  const startNumberDemoCall = async () => {
+    if (!selectedNumberId || isCallLoading) return;
+    setIsCallLoading(true);
+    try {
+      const model = retellModels.find((item) => item.agent_id === numberData.retell_agent_id) || retellModels[0];
+      const call = await createCompanyWebCall(selectedNumberId);
+      setActiveAgentName(model?.agent_name || "Peoplix AI Agent");
+      setIsCallModalOpen(true);
+      await sdk.startCall({ accessToken: call.access_token });
+    } catch (error) {
+      console.error("Failed to start phone-specific demo call:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to start demo call");
+      setIsCallLoading(false);
+    }
+  };
+
+  const endNumberDemoCall = () => {
+    sdk.stopCall();
+    setIsCallModalOpen(false);
+  };
+
+  const toggleMute = () => {
+    const nextMuted = !isMuted;
+    const internalSdk = sdk as any;
+    if (internalSdk.room?.localParticipant) {
+      internalSdk.room.localParticipant.setMicrophoneEnabled(!nextMuted);
+      setIsMuted(nextMuted);
     }
   };
 
@@ -185,7 +247,10 @@ export default function CompanyData() {
               </label>
               {numberData.knowledge_file_name && <span className="inline-flex items-center gap-2 text-sm text-gray-500"><FileText size={16} className="text-[#8B7355]" />{numberData.knowledge_file_name}</span>}
             </div>
-            <button onClick={() => void saveNumberData()} disabled={savingNumberData} className="inline-flex w-fit items-center gap-2 rounded-xl bg-[#8B7355] px-5 py-3 font-semibold text-white disabled:opacity-50"><Save size={17} /> {savingNumberData ? "Saving..." : "Save phone data"}</button>
+            <div className="flex flex-wrap gap-3 md:col-span-2">
+              <button onClick={() => void saveNumberData()} disabled={savingNumberData} className="inline-flex w-fit items-center gap-2 rounded-xl bg-[#8B7355] px-5 py-3 font-semibold text-white disabled:opacity-50"><Save size={17} /> {savingNumberData ? "Saving..." : "Save phone data"}</button>
+              <button onClick={() => void startNumberDemoCall()} disabled={isCallLoading || !retellModels.length} className="inline-flex w-fit items-center gap-2 rounded-xl bg-gray-900 px-5 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"><PhoneCall size={17} /> {isCallLoading ? "Connecting..." : "Start live demo call"}</button>
+            </div>
           </div>}
         </section>
 
@@ -217,6 +282,7 @@ export default function CompanyData() {
           </div>
         </section>
       </div>
+      <ActiveCallModal isOpen={isCallModalOpen} isConnected={isCallConnected} onClose={endNumberDemoCall} isMuted={isMuted} onToggleMute={toggleMute} agentName={activeAgentName} />
     </main>
   );
 }

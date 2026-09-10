@@ -1,4 +1,5 @@
 import { getCollection, Collections } from '../../infrastructure/database/index.js';
+import { ObjectId } from 'mongodb';
 import { employeesRepository } from '../employees/employees.repository.js';
 import { departmentsRepository } from '../departments/departments.repository.js';
 import { logger } from '../../config/logger.js';
@@ -277,7 +278,14 @@ export class RetellService {
       retell_agent_id: payload.agent_id,
     });
 
-    const phoneAssignment = await this.getOrCreatePhoneAssignment(companyId, phoneNumber, payload.metadata?.twilio_sid || payload.metadata?.phone_sid);
+    const metadataAssignmentId = payload.metadata?.phone_assignment_id;
+    const phoneAssignment = metadataAssignmentId && ObjectId.isValid(metadataAssignmentId)
+      ? await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({
+        _id: new ObjectId(metadataAssignmentId),
+        company_id: companyId,
+        status: 'assigned',
+      })
+      : await this.getOrCreatePhoneAssignment(companyId, phoneNumber, payload.metadata?.twilio_sid || payload.metadata?.phone_sid);
 
     const now = new Date();
     await getCollection(Collections.CALL_LOGS).insertOne({
