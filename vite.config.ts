@@ -6,4 +6,16 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: "/",
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "react-vendor": ["react", "react-dom", "react-router-dom"],
+          "ui-vendor": ["framer-motion", "lucide-react", "react-icons"],
+          "charts-vendor": ["recharts"],
+          "retell-vendor": ["retell-client-js-sdk"],
+        },
+      },
+    },
+  },
 });
