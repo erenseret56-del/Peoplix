@@ -57,6 +57,8 @@ export interface RetellCallSummary {
 
 export interface RetellPhoneNumberResponse {
   phone_number: string;
+  inbound_agents?: Array<{ agent_id: string; weight: number }>;
+  outbound_agents?: Array<{ agent_id: string; weight: number }>;
   [key: string]: unknown;
 }
 
@@ -146,13 +148,48 @@ class RetellClient {
   }
 
   async listPhoneNumbers(): Promise<RetellPhoneNumberResponse[]> {
-    const response = await this.request<RetellPhoneNumberResponse[] | { phone_numbers?: RetellPhoneNumberResponse[] }>('GET', '/list-phone-numbers');
-    return Array.isArray(response) ? response : response.phone_numbers || [];
+    const phoneNumbers: RetellPhoneNumberResponse[] = [];
+    let paginationKey: string | undefined;
+
+    do {
+      const query = new URLSearchParams({ limit: '1000' });
+      if (paginationKey) query.set('pagination_key', paginationKey);
+      const response = await this.request<{
+        items?: RetellPhoneNumberResponse[];
+        has_more?: boolean;
+        pagination_key?: string;
+      }>('GET', `/v2/list-phone-numbers?${query.toString()}`);
+      phoneNumbers.push(...(response.items || []));
+      paginationKey = response.has_more ? response.pagination_key : undefined;
+    } while (paginationKey);
+
+    return phoneNumbers;
   }
 
-  async isPhoneNumberImported(phoneNumber: string): Promise<boolean> {
+  async getPhoneNumber(phoneNumber: string): Promise<RetellPhoneNumberResponse | null> {
     const phoneNumbers = await this.listPhoneNumbers();
-    return phoneNumbers.some((number) => number.phone_number === phoneNumber);
+    return phoneNumbers.find((number) => number.phone_number === phoneNumber) || null;
+  }
+
+  async updatePhoneNumber(
+    phoneNumber: string,
+    terminationUri: string,
+    agentId: string,
+    nickname: string,
+    inboundWebhookUrl?: string,
+  ): Promise<RetellPhoneNumberResponse> {
+    return this.request<RetellPhoneNumberResponse>('PATCH', `/update-phone-number/${encodeURIComponent(phoneNumber)}`, {
+      termination_uri: terminationUri,
+      inbound_agents: [{ agent_id: agentId, weight: 1 }],
+      outbound_agents: [{ agent_id: agentId, weight: 1 }],
+      nickname,
+      ...(inboundWebhookUrl ? { inbound_webhook_url: inboundWebhookUrl } : {}),
+    });
+  }
+
+  isPhoneNumberAlreadyExistsError(error: unknown): boolean {
+    return error instanceof Error
+      && /^Retell API error:\s*400\s*-\s*Phone number already exists\.?$/i.test(error.message.trim());
   }
 
   async importPhoneNumber(phoneNumber: string, terminationUri: string, agentId: string, nickname: string, inboundWebhookUrl?: string): Promise<Record<string, unknown>> {

@@ -4,6 +4,7 @@ import { companiesRepository } from '../companies/companies.repository.js';
 import { aiConfigRepository } from '../ai-config/ai-config.repository.js';
 import { retellClient } from '../retell/retell.client.js';
 import { config } from '../../config/env.js';
+import { logger } from '../../config/logger.js';
 import { NotFoundError } from '../../middleware/errorHandler.js';
 
 function getTwilioClient() {
@@ -61,15 +62,47 @@ async function bindNumberToCompanyAgent(companyId: string, phoneNumber: string) 
     throw new Error('The configured Retell agent could not be found.');
   }
 
-  const alreadyImported = await retellClient.isPhoneNumberImported(phoneNumber);
-  if (!alreadyImported) {
-    await retellClient.importPhoneNumber(
-      phoneNumber,
-      config.retell.twilioTerminationUri,
-      agentId,
-      `${phoneNumber} - ${agent.agent_name}`,
-      config.retell.inboundWebhookUrl,
-    );
+  const existingPhoneNumber = await retellClient.getPhoneNumber(phoneNumber);
+  const nickname = `${phoneNumber} - ${agent.agent_name}`;
+  try {
+    if (existingPhoneNumber) {
+      await retellClient.updatePhoneNumber(
+        phoneNumber,
+        config.retell.twilioTerminationUri,
+        agentId,
+        nickname,
+        config.retell.inboundWebhookUrl,
+      );
+      logger.info({ phoneNumber, agentId }, 'Retell phone number already existed and was updated');
+    } else {
+      await retellClient.importPhoneNumber(
+        phoneNumber,
+        config.retell.twilioTerminationUri,
+        agentId,
+        nickname,
+        config.retell.inboundWebhookUrl,
+      );
+      logger.info({ phoneNumber, agentId }, 'Retell phone number imported');
+    }
+  } catch (error) {
+    if (!retellClient.isPhoneNumberAlreadyExistsError(error)) {
+      logger.error({ err: error, phoneNumber, agentId }, 'Retell phone number binding failed');
+      throw error;
+    }
+
+    try {
+      await retellClient.updatePhoneNumber(
+        phoneNumber,
+        config.retell.twilioTerminationUri,
+        agentId,
+        nickname,
+        config.retell.inboundWebhookUrl,
+      );
+      logger.info({ phoneNumber, agentId }, 'Retell phone number already existed during import and was updated');
+    } catch (updateError) {
+      logger.error({ err: updateError, phoneNumber, agentId }, 'Retell phone number update after duplicate import failed');
+      throw updateError;
+    }
   }
 
   return agentId;
