@@ -209,19 +209,19 @@ export class CompaniesService {
     await cleanup('remove call transcripts', () => getCollection(Collections.CALL_TRANSCRIPTS).deleteMany({
       call_log_id: { $in: callLogs.map((call) => call._id!.toString()) },
     }));
-    await cleanup('remove call logs', () => getCollection(Collections.CALL_LOGS).deleteMany({ company_id: id }));
-    await cleanup('remove company users', () => getCollection(Collections.COMPANY_USERS).deleteMany({ company_id: id }));
+    await cleanup('remove call logs', () => getCollection(Collections.CALL_LOGS).deleteMany({ company_id: companyIdFilters }));
+    await cleanup('remove company users', () => getCollection(Collections.COMPANY_USERS).deleteMany({ company_id: companyIdFilters }));
     await cleanup('remove user accounts', () => getCollection(Collections.USERS).deleteMany({ _id: { $in: userObjectIdsToDelete } }));
-    await cleanup('remove employees', () => getCollection(Collections.EMPLOYEES).deleteMany({ company_id: id }));
-    await cleanup('remove departments', () => getCollection(Collections.DEPARTMENTS).deleteMany({ company_id: id }));
-    await cleanup('remove designations', () => getCollection(Collections.DESIGNATIONS).deleteMany({ company_id: id }));
-    await cleanup('remove customers', () => getCollection(Collections.CUSTOMERS).deleteMany({ company_id: id }));
-    await cleanup('remove company documents', () => getCollection(Collections.DOCUMENTS).deleteMany({ company_id: id }));
-    await cleanup('remove FAQs', () => getCollection(Collections.FAQS).deleteMany({ company_id: id }));
-    await cleanup('remove policies', () => getCollection(Collections.POLICIES).deleteMany({ company_id: id }));
-    await cleanup('remove company Retell mappings', () => getCollection(Collections.RETELL_AGENTS).deleteMany({ company_id: id }));
-    await cleanup('remove AI configuration', () => getCollection(AI_CONFIG_COLLECTION).deleteMany({ company_id: id }));
-    await cleanup('remove audit logs', () => getCollection(Collections.AUDIT_LOGS).deleteMany({ company_id: id }));
+    await cleanup('remove employees', () => getCollection(Collections.EMPLOYEES).deleteMany({ company_id: companyIdFilters }));
+    await cleanup('remove departments', () => getCollection(Collections.DEPARTMENTS).deleteMany({ company_id: companyIdFilters }));
+    await cleanup('remove designations', () => getCollection(Collections.DESIGNATIONS).deleteMany({ company_id: companyIdFilters }));
+    await cleanup('remove customers', () => getCollection(Collections.CUSTOMERS).deleteMany({ company_id: companyIdFilters }));
+    await cleanup('remove company documents', () => getCollection(Collections.DOCUMENTS).deleteMany({ company_id: companyIdFilters }));
+    await cleanup('remove FAQs', () => getCollection(Collections.FAQS).deleteMany({ company_id: companyIdFilters }));
+    await cleanup('remove policies', () => getCollection(Collections.POLICIES).deleteMany({ company_id: companyIdFilters }));
+    await cleanup('remove company Retell mappings', () => getCollection(Collections.RETELL_AGENTS).deleteMany({ company_id: companyIdFilters }));
+    await cleanup('remove AI configuration', () => getCollection(AI_CONFIG_COLLECTION).deleteMany({ company_id: companyIdFilters }));
+    await cleanup('remove audit logs', () => getCollection(Collections.AUDIT_LOGS).deleteMany({ company_id: companyIdFilters }));
     await cleanup('remove company', () => companiesRepository.hardDelete(id));
     await invalidateTenantCache(id);
     logger.info({ companyId: id, phoneAssignmentsReleased: true }, 'Company and tenant records permanently deleted');
