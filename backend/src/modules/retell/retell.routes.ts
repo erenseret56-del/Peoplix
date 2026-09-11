@@ -115,7 +115,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
       companyId: assignment.company_id,
       companyName: resolvedConfig.dynamic_variables.company_name,
       agentId: resolvedConfig.retell_agent_id,
-      numberProfileFound: Boolean(resolvedConfig.dynamic_variables.number_display_name || resolvedConfig.dynamic_variables.number_description || inboundKnowledge),
+      numberProfileFound: resolvedConfig.number_profile_found,
       companyKnowledgeFound: Boolean(inboundKnowledge.trim()),
       companyKnowledgeLength: inboundKnowledge.length,
       additionalInstructionsFound: Boolean(resolvedConfig.dynamic_variables.additional_instructions),

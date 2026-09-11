@@ -49,6 +49,7 @@ export class AIConfigService {
     retell_agent_id: string;
     retell_llm_id?: string;
     dynamic_variables: RetellDynamicVariables;
+    number_profile_found: boolean;
     welcome_message?: string;
     ai_instructions?: string;
     features: CompanyAIConfigDocument['features'];
@@ -156,6 +157,7 @@ export class AIConfigService {
       retell_agent_id: agentId,
       retell_llm_id: llmId,
       dynamic_variables: dynamicVars,
+      number_profile_found: Boolean(profile),
       welcome_message: welcomeMessage,
       ai_instructions: aiInstructions,
       features: cfg?.features || defaultFeatures(),
