@@ -42,7 +42,7 @@ export class AIConfigService {
    * This ensures {{company_name}}, {{company_phone}} etc. are always current
    * from the company record — not stale from the AI config.
    */
-  async getResolvedConfig(
+  async buildCompanyCallContext(
     companyId: string,
     options: { phoneAssignmentId?: string; phoneNumber?: string } = {},
   ): Promise<{
@@ -50,6 +50,12 @@ export class AIConfigService {
     retell_llm_id?: string;
     dynamic_variables: RetellDynamicVariables;
     number_profile_found: boolean;
+    metadata: {
+      company_id: string;
+      phone_assignment_id?: string;
+      phone_number?: string;
+      agent_id: string;
+    };
     welcome_message?: string;
     ai_instructions?: string;
     features: CompanyAIConfigDocument['features'];
@@ -158,6 +164,12 @@ export class AIConfigService {
       retell_llm_id: llmId,
       dynamic_variables: dynamicVars,
       number_profile_found: Boolean(profile),
+      metadata: {
+        company_id: companyId,
+        ...(assignment?._id ? { phone_assignment_id: assignment._id.toString() } : {}),
+        ...(normalizedPhoneNumber ? { phone_number: normalizedPhoneNumber } : {}),
+        agent_id: agentId,
+      },
       welcome_message: welcomeMessage,
       ai_instructions: aiInstructions,
       features: cfg?.features || defaultFeatures(),

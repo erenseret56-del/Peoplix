@@ -102,7 +102,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
       return reply.send({ call_inbound: { reject: true, reason: 'NO_COMPANY_FOR_PHONE' } });
     }
 
-    const resolvedConfig = await aiConfigService.getResolvedConfig(assignment.company_id, {
+    const resolvedConfig = await aiConfigService.buildCompanyCallContext(assignment.company_id, {
       phoneAssignmentId: assignment.phone_assignment_id,
       phoneNumber: assignment.phone_number || destinationNumber,
     });
@@ -127,12 +127,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
         override_agent_id: resolvedConfig.retell_agent_id,
         dynamic_variables: resolvedConfig.dynamic_variables,
         welcome_message: resolvedConfig.welcome_message,
-        metadata: {
-          company_id: assignment.company_id,
-          phone_assignment_id: assignment.phone_assignment_id,
-          phone_number: assignment.phone_number || destinationNumber,
-          agent_id: resolvedConfig.retell_agent_id,
-        },
+        metadata: resolvedConfig.metadata,
       },
     });
   });
@@ -367,7 +362,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
         phoneAssignmentId = parsed.data.assignment_id;
       }
 
-      const resolvedConfig = await aiConfigService.getResolvedConfig(tenantId, {
+      const resolvedConfig = await aiConfigService.buildCompanyCallContext(tenantId, {
         phoneAssignmentId,
         phoneNumber: phoneAssignmentId ? (await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({ _id: new ObjectId(phoneAssignmentId), company_id: tenantId, status: 'assigned' }, { projection: { phone_number: 1 } }))?.phone_number : undefined,
       });
@@ -394,7 +389,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
         call_id: webCall.call_id,
         agent_id: agentId,
         call_type: 'web',
-        metadata: { company_id: tenantId, ...(phoneAssignmentId ? { phone_assignment_id: phoneAssignmentId } : {}) },
+        metadata: resolvedConfig.metadata,
       });
 
       logger.info({
