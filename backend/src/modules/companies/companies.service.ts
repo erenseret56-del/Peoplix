@@ -166,11 +166,14 @@ export class CompaniesService {
   async delete(id: string): Promise<void> {
     if (!ObjectId.isValid(id)) throw new ValidationError('Invalid company id');
 
+    const companyObjectId = new ObjectId(id);
+    const companyIdFilters = { $in: [id, companyObjectId] };
+
     const company = await companiesRepository.findById(id);
     if (!company) throw new NotFoundError('Company not found');
 
     const companyUsers = await getCollection(Collections.COMPANY_USERS)
-      .find({ company_id: id }, { projection: { user_id: 1 } })
+      .find({ company_id: companyIdFilters }, { projection: { user_id: 1 } })
       .toArray();
     const userIds = companyUsers.map((user) => user.user_id).filter(Boolean);
     const sharedUsers = userIds.length
