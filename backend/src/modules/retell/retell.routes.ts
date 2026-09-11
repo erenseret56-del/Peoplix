@@ -366,7 +366,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
         phoneAssignmentId,
         phoneNumber: phoneAssignmentId ? (await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({ _id: new ObjectId(phoneAssignmentId), company_id: tenantId, status: 'assigned' }, { projection: { phone_number: 1 } }))?.phone_number : undefined,
       });
-      const agentId = config.retell.agentId;
+      const agentId = resolvedConfig.retell_agent_id;
       if (!agentId) {
         return reply.status(503).send({ success: false, error: { code: 'NOT_CONFIGURED', message: 'The shared demo Retell agent is not configured.' } });
       }
