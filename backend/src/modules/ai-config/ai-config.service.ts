@@ -122,16 +122,20 @@ export class AIConfigService {
       company_website: company.website || cfg?.dynamic_variables?.company_website || '',
       company_address: buildAddress(company),
       company_knowledge: knowledgeContext,
-      greeting_name: profile?.display_name || cfg?.dynamic_variables?.greeting_name || company.name,
+      receptionist_name: config.app.receptionistName,
+      greeting_name: config.app.receptionistName,
     };
 
-    // Build resolved welcome message from template
+    // Build resolved welcome message from template using the fixed receptionist identity.
     const welcomeTemplate = cfg?.welcome_message_template
-      || `Hi, thanks for calling ${company.name}. How can I help you today?`;
+      || `Hi, thanks for calling {{company_name}}. I'm {{receptionist_name}}. How can I help you today?`;
     const welcomeMessage = resolveTemplate(welcomeTemplate, dynamicVars);
 
-    // Append company-specific instructions to the AI
-    const aiInstructions = cfg?.ai_instructions;
+    // Keep caller identity fixed even if a different Retell agent or model is later selected.
+    const aiInstructions = [
+      cfg?.ai_instructions,
+      'You are Ava, the AI receptionist. Maintain this identity throughout the entire conversation. Never say or imply you are the Retell agent name, agent ID, model name, or any other internal system name.',
+    ].filter(Boolean).join('\n\n');
 
     // Build business hours text if configured
     if (cfg?.business_hours) {

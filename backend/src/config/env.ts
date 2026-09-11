@@ -82,6 +82,7 @@ export const config = {
     port: env.PORT,
     logLevel: env.LOG_LEVEL,
     trustProxy: env.TRUST_PROXY,
+    receptionistName: 'Ava',
     isDevelopment: env.NODE_ENV === 'development',
     isProduction: env.NODE_ENV === 'production',
     isTest: env.NODE_ENV === 'test',

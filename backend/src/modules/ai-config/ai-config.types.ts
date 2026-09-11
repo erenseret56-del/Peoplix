@@ -25,7 +25,8 @@ export interface RetellDynamicVariables {
   company_website?: string;
   company_address?: string;
   business_hours_text?: string;
-  greeting_name?: string;        // e.g. "Peoplix Support"
+  receptionist_name?: string;     // caller-facing identity, fixed app value
+  greeting_name?: string;         // e.g. "Ava"
   [key: string]: string | undefined;  // custom variables
 }
 

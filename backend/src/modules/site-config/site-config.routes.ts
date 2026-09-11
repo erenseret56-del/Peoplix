@@ -147,7 +147,8 @@ export async function siteConfigRoutes(fastify: FastifyInstance) {
         {
           company_name: 'Peoplix',
           company_description: 'AI voice agents for enterprise HR operations. We help HR teams resolve employee requests instantly using conversational AI.',
-          greeting_name: agentName,
+          receptionist_name: config.app.receptionistName,
+          greeting_name: config.app.receptionistName,
           company_email: '',
           company_phone: '',
           company_website: 'https://peoplix.ai',
@@ -156,7 +157,7 @@ export async function siteConfigRoutes(fastify: FastifyInstance) {
         }
       );
 
-      logger.info({ callId: webCall.call_id, agentId, agentName, docs: publicDocs.length }, 'Public demo web call created');
+      logger.info({ callId: webCall.call_id, agentId, receptionistName: config.app.receptionistName, docs: publicDocs.length }, 'Public demo web call created');
 
       return reply.send({
         success: true,
