@@ -41,7 +41,10 @@ export class AIConfigService {
    * This ensures {{company_name}}, {{company_phone}} etc. are always current
    * from the company record — not stale from the AI config.
    */
-  async getResolvedConfig(companyId: string): Promise<{
+  async getResolvedConfig(
+    companyId: string,
+    options: { phoneAssignmentId?: string; phoneNumber?: string } = {},
+  ): Promise<{
     retell_agent_id: string;
     retell_llm_id?: string;
     dynamic_variables: RetellDynamicVariables;
@@ -50,7 +53,6 @@ export class AIConfigService {
     features: CompanyAIConfigDocument['features'];
     business_hours?: CompanyAIConfigDocument['business_hours'];
   }> {
-    // Fetch both in parallel
     const [cfg, company, documents] = await Promise.all([
       aiConfigRepository.findByCompanyId(companyId),
       companiesRepository.findById(companyId),
@@ -63,6 +65,31 @@ export class AIConfigService {
 
     if (!company) throw new NotFoundError('Company not found');
 
+    let assignment: { _id?: any; company_id?: string; phone_number?: string } | null = null;
+    let profile: any = null;
+
+    if (options.phoneAssignmentId) {
+      assignment = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne(
+        { _id: new (await import('mongodb')).ObjectId(options.phoneAssignmentId), company_id: companyId, status: 'assigned' },
+        { projection: { _id: 1, company_id: 1, phone_number: 1 } },
+      );
+    } else if (options.phoneNumber) {
+      const normalized = normalizePhoneNumber(options.phoneNumber);
+      assignment = normalized
+        ? await getCollection(Collections.PHONE_ASSIGNMENTS).findOne(
+            { company_id: companyId, normalized_phone_number: normalized, status: 'assigned' },
+            { projection: { _id: 1, company_id: 1, phone_number: 1 } },
+          )
+        : null;
+    }
+
+    if (assignment?._id) {
+      profile = await getCollection(Collections.NUMBER_PROFILES).findOne({
+        company_id: companyId,
+        phone_assignment_id: assignment._id.toString(),
+      });
+    }
+
     const agentId = cfg?.retell_agent_id || config.retell.agentId || '';
     const llmId = config.retell.llmId;
 
@@ -70,8 +97,6 @@ export class AIConfigService {
       throw new NotFoundError('No Retell agent configured for this company');
     }
 
-    // Build dynamic variables — company DB record takes priority over stored vars
-    // This guarantees {{company_name}} always reflects the current company name
     const knowledgeContext = [
       'Use only the client documents below to answer questions. If the answer is not present, say that it is not available in the provided documents.',
       ...(documents.length ? documents.map((document: any) => [
@@ -79,21 +104,25 @@ export class AIConfigService {
         document.description || '',
         document.content_text || '',
       ].filter(Boolean).join('\n')) : ['No client documents have been uploaded.']),
+      ...(profile ? [
+        `Number profile: ${profile.display_name || 'Unnamed number profile'}`,
+        profile.description || '',
+        profile.knowledge_text || '',
+        profile.knowledge_file_text || '',
+      ].filter(Boolean).join('\n') : []),
     ].join('\n\n').slice(0, 100000);
 
+    const normalizedPhoneNumber = assignment?.phone_number || options.phoneNumber || company.phone || '';
     const dynamicVars: RetellDynamicVariables = {
-      // Defaults from AI config (custom vars, etc.)
       ...(cfg?.dynamic_variables || {}),
-
-      // Always override with live company data
       company_name: company.name,
       company_description: company.description || cfg?.dynamic_variables?.company_description || '',
       company_email: company.email || cfg?.dynamic_variables?.company_email || '',
-      company_phone: company.phone || cfg?.dynamic_variables?.company_phone || '',
+      company_phone: normalizedPhoneNumber || cfg?.dynamic_variables?.company_phone || '',
       company_website: company.website || cfg?.dynamic_variables?.company_website || '',
       company_address: buildAddress(company),
       company_knowledge: knowledgeContext,
-      greeting_name: cfg?.dynamic_variables?.greeting_name || company.name,
+      greeting_name: profile?.display_name || cfg?.dynamic_variables?.greeting_name || company.name,
     };
 
     // Build resolved welcome message from template
@@ -197,6 +226,12 @@ export class AIConfigService {
 }
 
 // ── HELPERS ────────────────────────────────────────────────────────────────
+
+function normalizePhoneNumber(phone?: string): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  return digits ? `+${digits}` : null;
+}
 
 function resolveTemplate(template: string, vars: Record<string, string | undefined>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] || '');

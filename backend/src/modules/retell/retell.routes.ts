@@ -94,18 +94,30 @@ export async function retellRoutes(fastify: FastifyInstance) {
   fastify.post('/inbound-call', { preHandler: [requireRetellWebhook] }, async (request, reply) => {
     const body = request.body as any;
     const inbound = body.call_inbound || {};
-    const companyId = await retellService.resolveCompanyFromPhone(inbound.to_number);
+    const destinationNumber = inbound.to_number || inbound.destination_number || inbound.from_number;
+    const assignment = await retellService.resolvePhoneAssignmentForNumber(destinationNumber);
 
-    if (!companyId) {
-      return reply.send({ call_inbound: { reject: true } });
+    if (!assignment) {
+      logger.warn({ inbound, url: request.url }, 'Inbound call rejected: no company assignment for destination number');
+      return reply.send({ call_inbound: { reject: true, reason: 'NO_COMPANY_FOR_PHONE' } });
     }
 
-    const resolvedConfig = await aiConfigService.getResolvedConfig(companyId);
+    const resolvedConfig = await aiConfigService.getResolvedConfig(assignment.company_id, {
+      phoneAssignmentId: assignment.phone_assignment_id,
+      phoneNumber: assignment.phone_number || destinationNumber,
+    });
+
     return reply.send({
       call_inbound: {
         override_agent_id: resolvedConfig.retell_agent_id,
         dynamic_variables: resolvedConfig.dynamic_variables,
-        metadata: { company_id: companyId },
+        welcome_message: resolvedConfig.welcome_message,
+        metadata: {
+          company_id: assignment.company_id,
+          phone_assignment_id: assignment.phone_assignment_id,
+          phone_number: assignment.phone_number || destinationNumber,
+          agent_id: resolvedConfig.retell_agent_id,
+        },
       },
     });
   });
@@ -323,15 +335,8 @@ export async function retellRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ success: false, error: { code: 'INVALID_INPUT', message: 'Invalid phone assignment' } });
       }
 
-      // Load company data from DB while keeping the shared demo agent fixed.
-      const resolvedConfig = await aiConfigService.getResolvedConfig(tenantId);
-      const agentId = config.retell.agentId;
-      if (!agentId) {
-        return reply.status(503).send({ success: false, error: { code: 'NOT_CONFIGURED', message: 'The shared demo Retell agent is not configured.' } });
-      }
-      let dynamicVariables = resolvedConfig.dynamic_variables;
+      // Load company and number-specific data via the same canonical config resolver
       let phoneAssignmentId: string | undefined;
-
       if (parsed.data.assignment_id) {
         if (!ObjectId.isValid(parsed.data.assignment_id)) {
           return reply.status(400).send({ success: false, error: { code: 'INVALID_INPUT', message: 'Invalid phone assignment' } });
@@ -344,25 +349,18 @@ export async function retellRoutes(fastify: FastifyInstance) {
         if (!assignment) {
           return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Phone number does not belong to this company' } });
         }
-
-        const profile = await getCollection(Collections.NUMBER_PROFILES).findOne({
-          company_id: tenantId,
-          phone_assignment_id: parsed.data.assignment_id,
-        });
-        dynamicVariables = {
-          ...dynamicVariables,
-          company_phone: assignment.phone_number,
-          greeting_name: profile?.display_name || dynamicVariables.greeting_name,
-          company_knowledge: [
-            dynamicVariables.company_knowledge,
-            `Phone-specific instructions for ${assignment.phone_number}:`,
-            profile?.description || '',
-            profile?.knowledge_text || '',
-            profile?.knowledge_file_text || '',
-          ].filter(Boolean).join('\n\n').slice(0, 100000),
-        };
         phoneAssignmentId = parsed.data.assignment_id;
       }
+
+      const resolvedConfig = await aiConfigService.getResolvedConfig(tenantId, {
+        phoneAssignmentId,
+        phoneNumber: phoneAssignmentId ? (await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({ _id: new ObjectId(phoneAssignmentId), company_id: tenantId, status: 'assigned' }, { projection: { phone_number: 1 } }))?.phone_number : undefined,
+      });
+      const agentId = config.retell.agentId;
+      if (!agentId) {
+        return reply.status(503).send({ success: false, error: { code: 'NOT_CONFIGURED', message: 'The shared demo Retell agent is not configured.' } });
+      }
+      const dynamicVariables = resolvedConfig.dynamic_variables;
 
       // Create the call with company-specific dynamic variables
       const webCall = await retellClient.createWebCall(

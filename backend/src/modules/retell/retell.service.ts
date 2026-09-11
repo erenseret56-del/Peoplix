@@ -87,15 +87,27 @@ export class RetellService {
     return null;
   }
 
-  async resolveCompanyFromPhone(phoneNumber?: string): Promise<string | null> {
+  async resolvePhoneAssignmentForNumber(phoneNumber?: string): Promise<{ company_id: string; phone_assignment_id: string; phone_number: string } | null> {
     const normalized = normalizePhoneNumber(phoneNumber);
     if (!normalized) return null;
 
     const assignment = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne(
-      { normalized_phone_number: { $in: [normalized, normalized.slice(1)] }, status: 'assigned' },
-      { projection: { company_id: 1 } },
+      { normalized_phone_number: normalized, status: 'assigned' },
+      { projection: { _id: 1, company_id: 1, phone_number: 1 } },
     );
-    return assignment?.company_id ? String(assignment.company_id) : null;
+
+    if (!assignment?.company_id || !assignment._id) return null;
+
+    return {
+      company_id: String(assignment.company_id),
+      phone_assignment_id: String(assignment._id),
+      phone_number: assignment.phone_number || phoneNumber || '',
+    };
+  }
+
+  async resolveCompanyFromPhone(phoneNumber?: string): Promise<string | null> {
+    const assignment = await this.resolvePhoneAssignmentForNumber(phoneNumber);
+    return assignment?.company_id || null;
   }
 
   async getPhoneAssignmentForCall(callId: string): Promise<string | null> {
