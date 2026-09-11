@@ -94,11 +94,15 @@ export async function retellRoutes(fastify: FastifyInstance) {
   fastify.post('/inbound-call', { preHandler: [requireRetellWebhook] }, async (request, reply) => {
     const body = request.body as any;
     const inbound = body.call_inbound || {};
-    const destinationNumber = inbound.to_number || inbound.destination_number || inbound.from_number;
+    const destinationNumber = inbound.to_number || inbound.destination_number;
     const assignment = await retellService.resolvePhoneAssignmentForNumber(destinationNumber);
 
     if (!assignment) {
-      logger.warn({ inbound, url: request.url }, 'Inbound call rejected: no company assignment for destination number');
+      logger.warn({
+        callId: inbound.call_id || null,
+        destinationNumber: destinationNumber || null,
+        reason: 'NO_COMPANY_FOR_PHONE',
+      }, 'Inbound call rejected: no company assignment for destination number');
       return reply.send({ call_inbound: { reject: true, reason: 'NO_COMPANY_FOR_PHONE' } });
     }
 
@@ -106,6 +110,20 @@ export async function retellRoutes(fastify: FastifyInstance) {
       phoneAssignmentId: assignment.phone_assignment_id,
       phoneNumber: assignment.phone_number || destinationNumber,
     });
+    const inboundKnowledge = resolvedConfig.dynamic_variables.company_knowledge || '';
+
+    logger.info({
+      callId: inbound.call_id || null,
+      destinationNumber: assignment.phone_number || destinationNumber,
+      phoneAssignmentId: assignment.phone_assignment_id,
+      companyId: assignment.company_id,
+      companyName: resolvedConfig.dynamic_variables.company_name,
+      agentId: resolvedConfig.retell_agent_id,
+      numberProfileFound: inboundKnowledge.includes('Number profile:'),
+      companyKnowledgeFound: Boolean(inboundKnowledge.trim()),
+      companyKnowledgeLength: inboundKnowledge.length,
+      dynamicVariableKeys: Object.keys(resolvedConfig.dynamic_variables),
+    }, 'Inbound call context resolved');
 
     return reply.send({
       call_inbound: {
@@ -361,6 +379,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
         return reply.status(503).send({ success: false, error: { code: 'NOT_CONFIGURED', message: 'The shared demo Retell agent is not configured.' } });
       }
       const dynamicVariables = resolvedConfig.dynamic_variables;
+      const webKnowledge = dynamicVariables.company_knowledge || '';
 
       // Create the call with company-specific dynamic variables
       const webCall = await retellClient.createWebCall(
@@ -386,6 +405,10 @@ export async function retellRoutes(fastify: FastifyInstance) {
         callId: webCall.call_id,
         agentId,
         companyName: resolvedConfig.dynamic_variables.company_name,
+        phoneAssignmentId: phoneAssignmentId || null,
+        companyKnowledgeFound: Boolean(webKnowledge.trim()),
+        companyKnowledgeLength: webKnowledge.length,
+        dynamicVariableKeys: Object.keys(resolvedConfig.dynamic_variables),
       }, 'Web call created');
 
       // Return ONLY the access token — never the Retell API key

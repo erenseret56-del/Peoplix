@@ -5,6 +5,7 @@ import { NotFoundError } from '../../middleware/errorHandler.js';
 import { logger } from '../../config/logger.js';
 import { config } from '../../config/env.js';
 import { getCollection, Collections } from '../../infrastructure/database/index.js';
+import { ObjectId } from 'mongodb';
 
 /**
  * AI Config Service
@@ -53,11 +54,14 @@ export class AIConfigService {
     features: CompanyAIConfigDocument['features'];
     business_hours?: CompanyAIConfigDocument['business_hours'];
   }> {
+    const companyIdFilter = ObjectId.isValid(companyId)
+      ? { $in: [companyId, new ObjectId(companyId)] }
+      : companyId;
     const [cfg, company, documents] = await Promise.all([
       aiConfigRepository.findByCompanyId(companyId),
       companiesRepository.findById(companyId),
       getCollection(Collections.DOCUMENTS)
-        .find({ company_id: companyId, status: 'active' })
+        .find({ company_id: companyIdFilter, status: 'active' })
         .project({ title: 1, description: 1, content_text: 1 })
         .limit(100)
         .toArray(),
@@ -70,14 +74,14 @@ export class AIConfigService {
 
     if (options.phoneAssignmentId) {
       assignment = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne(
-        { _id: new (await import('mongodb')).ObjectId(options.phoneAssignmentId), company_id: companyId, status: 'assigned' },
+        { _id: new ObjectId(options.phoneAssignmentId), company_id: companyIdFilter, status: 'assigned' },
         { projection: { _id: 1, company_id: 1, phone_number: 1 } },
       );
     } else if (options.phoneNumber) {
       const normalized = normalizePhoneNumber(options.phoneNumber);
       assignment = normalized
         ? await getCollection(Collections.PHONE_ASSIGNMENTS).findOne(
-            { company_id: companyId, normalized_phone_number: normalized, status: 'assigned' },
+          { company_id: companyIdFilter, normalized_phone_number: normalized, status: 'assigned' },
             { projection: { _id: 1, company_id: 1, phone_number: 1 } },
           )
         : null;
@@ -85,7 +89,7 @@ export class AIConfigService {
 
     if (assignment?._id) {
       profile = await getCollection(Collections.NUMBER_PROFILES).findOne({
-        company_id: companyId,
+        company_id: companyIdFilter,
         phone_assignment_id: assignment._id.toString(),
       });
     }
@@ -142,7 +146,16 @@ export class AIConfigService {
       dynamicVars.business_hours_text = formatBusinessHours(cfg.business_hours);
     }
 
-    logger.debug({ companyId, agentId }, 'Resolved AI config for company');
+    logger.debug({
+      companyId,
+      agentId,
+      phoneAssignmentId: assignment?._id?.toString() || null,
+      numberProfileFound: Boolean(profile),
+      companyKnowledgeFound: Boolean(knowledgeContext.trim()),
+      companyKnowledgeLength: knowledgeContext.length,
+      documentsCount: documents.length,
+      dynamicVariableKeys: Object.keys(dynamicVars),
+    }, 'Resolved canonical call context');
 
     return {
       retell_agent_id: agentId,
