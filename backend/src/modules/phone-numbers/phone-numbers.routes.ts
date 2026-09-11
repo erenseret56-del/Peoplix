@@ -67,9 +67,18 @@ export async function phoneNumbersRoutes(fastify: FastifyInstance) {
     const assignments = await getCollection(Collections.PHONE_ASSIGNMENTS).find({ company_id: companyId, status: 'assigned' }).sort({ assigned_at: -1 }).toArray();
     const profiles = await getCollection(Collections.NUMBER_PROFILES).find({ company_id: companyId }).toArray();
     const profilesByNumber = new Map(profiles.map((profile) => [profile.phone_assignment_id, profile]));
+    const uniqueAssignments = new Map<string, any>();
+
+    for (const assignment of assignments) {
+      const key = assignment.normalized_phone_number || assignment.phone_number || assignment._id.toString();
+      if (!uniqueAssignments.has(key)) {
+        uniqueAssignments.set(key, assignment);
+      }
+    }
+
     return reply.send({
       success: true,
-      data: assignments.map((assignment) => ({
+      data: Array.from(uniqueAssignments.values()).map((assignment) => ({
         id: assignment._id.toString(),
         phone_number: assignment.phone_number,
         twilio_sid: assignment.twilio_sid,

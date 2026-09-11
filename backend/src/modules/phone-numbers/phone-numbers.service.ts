@@ -158,6 +158,24 @@ export class PhoneNumbersService {
     const selected = available[0];
     if (!selected) throw new Error(`No available Twilio numbers found for ${countryCode}.`);
 
+    const normalizedPhoneNumber = selected.phone_number.replace(/\D/g, '');
+    const existingAssignment = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({
+      company_id: companyId,
+      normalized_phone_number: normalizedPhoneNumber,
+      status: 'assigned',
+    });
+    if (existingAssignment) {
+      return {
+        id: existingAssignment._id.toString(),
+        phone_number: existingAssignment.phone_number,
+        twilio_sid: existingAssignment.twilio_sid,
+        company_id: companyId,
+        company_name: company.name,
+        assigned_at: existingAssignment.assigned_at,
+        reused: true,
+      };
+    }
+
     const purchased = await twilioClient.incomingPhoneNumbers.create({
       phoneNumber: selected.phone_number,
     });
