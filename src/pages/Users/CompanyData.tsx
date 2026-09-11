@@ -233,8 +233,8 @@ export default function CompanyData() {
         <section className="rounded-2xl border border-[#E4DAC3] bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold text-gray-900">Phone-specific AI data</h2>
-              <p className="mt-1 text-sm text-gray-500">This knowledge is used only when callers reach this phone number.</p>
+              <h2 className="text-xl font-bold text-gray-900">Company data</h2>
+              <p className="mt-1 text-sm text-gray-500">Manage the information and knowledge used when callers reach this phone number.</p>
             </div>
             <span className="inline-flex items-center gap-2 rounded-xl bg-[#8B7355] px-3 py-2 text-sm font-semibold text-white"><Phone size={15} />{selectedNumber?.phone_number || numberId}</span>
           </div>
@@ -255,33 +255,32 @@ export default function CompanyData() {
               <button onClick={() => void startNumberDemoCall()} disabled={isCallLoading || !retellModels.length} className="inline-flex w-fit items-center gap-2 rounded-xl bg-gray-900 px-5 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"><PhoneCall size={17} /> {isCallLoading ? "Connecting..." : "Start live demo call"}</button>
             </div>
           </div>}
-        </section>
-
-        <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">Company files</h2>
-              <p className="mt-1 text-sm text-gray-500">Upload text-readable company knowledge files for the agent.</p>
-            </div>
-            <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-gray-900 px-4 py-3 font-semibold text-white">
-              <Upload size={17} /> Upload file
-              <input type="file" accept=".txt,.json,.md,.csv,.pdf,.docx,.pptx,.xlsx,.odt,.odp,.ods,.rtf,.html,.epub" className="hidden" onChange={uploadDocument} />
-            </label>
-          </div>
-          <div className="mt-5 divide-y divide-gray-100">
-            {documents.map((document) => (
-              <div key={document.id} className="flex items-center justify-between gap-4 py-4">
-                <div className="flex min-w-0 items-center gap-3">
-                  <FileText className="shrink-0 text-[#8B7355]" size={20} />
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-gray-900">{document.file_name || document.title}</p>
-                    <p className="text-xs text-gray-500">Added {new Date(document.created_at).toLocaleDateString()}</p>
-                  </div>
-                </div>
-                <button onClick={() => void removeDocument(document.id)} title="Remove file" className="rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={17} /></button>
+          <div className="mt-8 border-t border-[#E4DAC3] pt-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900">Company files</h3>
+                <p className="mt-1 text-sm text-gray-500">Upload text-readable company knowledge files for the agent.</p>
               </div>
-            ))}
-            {!loading && documents.length === 0 && <p className="py-8 text-center text-sm text-gray-400">No company files uploaded yet.</p>}
+              <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-gray-900 px-4 py-3 font-semibold text-white">
+                <Upload size={17} /> Upload file
+                <input type="file" accept=".txt,.json,.md,.csv,.pdf,.docx,.pptx,.xlsx,.odt,.odp,.ods,.rtf,.html,.epub" className="hidden" onChange={uploadDocument} />
+              </label>
+            </div>
+            <div className="mt-5 divide-y divide-gray-100">
+              {documents.map((document) => (
+                <div key={document.id} className="flex items-center justify-between gap-4 py-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <FileText className="shrink-0 text-[#8B7355]" size={20} />
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-gray-900">{document.file_name || document.title}</p>
+                      <p className="text-xs text-gray-500">Added {new Date(document.created_at).toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => void removeDocument(document.id)} title="Remove file" className="rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={17} /></button>
+                </div>
+              ))}
+              {!loading && documents.length === 0 && <p className="py-8 text-center text-sm text-gray-400">No company files uploaded yet.</p>}
+            </div>
           </div>
         </section>
       </div>
