@@ -183,6 +183,9 @@ export class CompaniesService {
       : [];
     const sharedUserIds = new Set(sharedUsers.map((user) => user.user_id));
     const userIdsToDelete = userIds.filter((userId) => !sharedUserIds.has(userId));
+    const userObjectIdsToDelete = userIdsToDelete
+      .filter((userId) => ObjectId.isValid(userId))
+      .map((userId) => new ObjectId(userId));
     const callLogs = await getCollection(Collections.CALL_LOGS)
       .find({ company_id: companyIdFilters }, { projection: { _id: 1 } })
       .toArray();
@@ -208,7 +211,7 @@ export class CompaniesService {
     }));
     await cleanup('remove call logs', () => getCollection(Collections.CALL_LOGS).deleteMany({ company_id: id }));
     await cleanup('remove company users', () => getCollection(Collections.COMPANY_USERS).deleteMany({ company_id: id }));
-    await cleanup('remove user accounts', () => getCollection(Collections.USERS).deleteMany({ _id: { $in: userIdsToDelete } }));
+    await cleanup('remove user accounts', () => getCollection(Collections.USERS).deleteMany({ _id: { $in: userObjectIdsToDelete } }));
     await cleanup('remove employees', () => getCollection(Collections.EMPLOYEES).deleteMany({ company_id: id }));
     await cleanup('remove departments', () => getCollection(Collections.DEPARTMENTS).deleteMany({ company_id: id }));
     await cleanup('remove designations', () => getCollection(Collections.DESIGNATIONS).deleteMany({ company_id: id }));
