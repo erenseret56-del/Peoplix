@@ -85,7 +85,9 @@ export class AIConfigService {
     if (assignment?._id) {
       profile = await getCollection(Collections.NUMBER_PROFILES).findOne({
         company_id: companyIdFilter,
-        phone_assignment_id: assignment._id.toString(),
+        phone_assignment_id: {
+          $in: [assignment._id.toString(), assignment._id],
+        },
       });
     }
 
@@ -116,6 +118,9 @@ export class AIConfigService {
       company_website: company.website || cfg?.dynamic_variables?.company_website || '',
       company_address: buildAddress(company),
       company_knowledge: knowledgeContext,
+      number_display_name: profile?.display_name || '',
+      number_description: profile?.description || '',
+      additional_instructions: profile?.additional_instructions || '',
       receptionist_name: config.app.receptionistName,
       greeting_name: config.app.receptionistName,
     };

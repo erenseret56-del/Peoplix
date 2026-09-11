@@ -37,12 +37,8 @@ function notFoundReply(message: string) {
   return { success: true, data: { found: false, message, data: null } };
 }
 
-async function resolveCompany(callId: string, agentId?: string): Promise<string | null> {
-  let companyId = await retellService.resolveCompanyFromCall(callId);
-  if (!companyId && agentId) {
-    companyId = await retellService.resolveCompanyFromAgent(agentId);
-  }
-  return companyId;
+async function resolveCompany(callId: string): Promise<string | null> {
+  return retellService.resolveCompanyFromCall(callId);
 }
 
 // ── ROUTES ────────────────────────────────────────────────────────────────────
@@ -119,9 +115,10 @@ export async function retellRoutes(fastify: FastifyInstance) {
       companyId: assignment.company_id,
       companyName: resolvedConfig.dynamic_variables.company_name,
       agentId: resolvedConfig.retell_agent_id,
-      numberProfileFound: inboundKnowledge.includes('Number profile:'),
+      numberProfileFound: Boolean(resolvedConfig.dynamic_variables.number_display_name || resolvedConfig.dynamic_variables.number_description || inboundKnowledge),
       companyKnowledgeFound: Boolean(inboundKnowledge.trim()),
       companyKnowledgeLength: inboundKnowledge.length,
+      additionalInstructionsFound: Boolean(resolvedConfig.dynamic_variables.additional_instructions),
       dynamicVariableKeys: Object.keys(resolvedConfig.dynamic_variables),
     }, 'Inbound call context resolved');
 
@@ -256,7 +253,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send(notFoundReply("I couldn't process that request."));
 
     const { call_id, query } = parsed.data;
-    const companyId = await resolveCompany(call_id, (request.body as any).agent_id);
+    const companyId = await resolveCompany(call_id);
     if (!companyId) return reply.send(notFoundReply("I'm unable to access company information for this call."));
 
     // Guard: check feature flag from DB
@@ -272,7 +269,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.send(notFoundReply("I couldn't process that request."));
 
     const { call_id, query } = parsed.data;
-    const companyId = await resolveCompany(call_id, (request.body as any).agent_id);
+    const companyId = await resolveCompany(call_id);
     if (!companyId) return reply.send(notFoundReply("I'm unable to access company information."));
 
     const enabled = await aiConfigService.isFeatureEnabled(companyId, 'department_lookup');
@@ -287,7 +284,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.send(notFoundReply("I couldn't process that request."));
 
     const { call_id, query } = parsed.data;
-    const companyId = await resolveCompany(call_id, (request.body as any).agent_id);
+    const companyId = await resolveCompany(call_id);
     if (!companyId) return reply.send(notFoundReply("I'm unable to access company information."));
 
     const enabled = await aiConfigService.isFeatureEnabled(companyId, 'faq_search');
@@ -302,7 +299,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.send(notFoundReply("I couldn't process that request."));
 
     const { call_id, query } = parsed.data;
-    const companyId = await resolveCompany(call_id, (request.body as any).agent_id);
+    const companyId = await resolveCompany(call_id);
     if (!companyId) return reply.send(notFoundReply("I'm unable to access company information."));
 
     const enabled = await aiConfigService.isFeatureEnabled(companyId, 'policy_search');
@@ -317,7 +314,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
     if (!parsed.success) return reply.send(notFoundReply("I couldn't process that request."));
 
     const { call_id, query } = parsed.data;
-    const companyId = await resolveCompany(call_id, (request.body as any).agent_id);
+    const companyId = await resolveCompany(call_id);
     if (!companyId) return reply.send(notFoundReply("I'm unable to access company information."));
 
     const phoneAssignmentId = await retellService.getPhoneAssignmentForCall(call_id);

@@ -121,7 +121,9 @@ export class RetellService {
   async searchNumberProfile(companyId: string, phoneAssignmentId: string, query: string): Promise<SearchResult> {
     const profile = await getCollection(Collections.NUMBER_PROFILES).findOne({
       company_id: companyId,
-      phone_assignment_id: phoneAssignmentId,
+      phone_assignment_id: {
+        $in: [phoneAssignmentId, ObjectId.isValid(phoneAssignmentId) ? new ObjectId(phoneAssignmentId) : phoneAssignmentId],
+      },
     });
     if (!profile) return { found: false, message: null, data: null };
     const searchable = `${profile.display_name || ''}\n${profile.description || ''}\n${profile.knowledge_text || ''}\n${profile.knowledge_file_text || ''}`;
@@ -277,8 +279,7 @@ export class RetellService {
   }): Promise<void> {
     const phoneNumber = payload.to_number || payload.from_number;
     const companyId = payload.metadata?.company_id
-      || await this.resolveCompanyFromPhone(phoneNumber)
-      || await this.resolveCompanyFromAgent(payload.agent_id);
+      || await this.resolveCompanyFromPhone(phoneNumber);
 
     if (!companyId) {
       logger.warn({ callId: payload.call_id, agentId: payload.agent_id }, 'Could not resolve company for call');
@@ -359,8 +360,7 @@ export class RetellService {
     if (!updated) {
       const phoneNumber = payload.to_number || payload.from_number;
       const companyId = payload.metadata?.company_id
-        || await this.resolveCompanyFromPhone(phoneNumber)
-        || (payload.agent_id ? await this.resolveCompanyFromAgent(payload.agent_id) : null);
+        || await this.resolveCompanyFromPhone(phoneNumber);
 
       if (!companyId) {
         logger.warn({ callId: payload.call_id }, 'Call log not found and company could not be resolved for ended event');
