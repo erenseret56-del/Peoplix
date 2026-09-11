@@ -178,13 +178,13 @@ export class CompaniesService {
     const userIds = companyUsers.map((user) => user.user_id).filter(Boolean);
     const sharedUsers = userIds.length
       ? await getCollection(Collections.COMPANY_USERS)
-        .find({ user_id: { $in: userIds }, company_id: { $ne: id }, status: 'active' }, { projection: { user_id: 1 } })
+        .find({ user_id: { $in: userIds }, company_id: { $ne: companyObjectId, $nin: [companyObjectId, id] }, status: 'active' }, { projection: { user_id: 1 } })
         .toArray()
       : [];
     const sharedUserIds = new Set(sharedUsers.map((user) => user.user_id));
     const userIdsToDelete = userIds.filter((userId) => !sharedUserIds.has(userId));
     const callLogs = await getCollection(Collections.CALL_LOGS)
-      .find({ company_id: id }, { projection: { _id: 1 } })
+      .find({ company_id: companyIdFilters }, { projection: { _id: 1 } })
       .toArray();
 
     const cleanup = async (step: string, operation: () => Promise<unknown>) => {
