@@ -85,17 +85,8 @@ export const getMyNumberProfiles = async () => {
   return response.data;
 };
 
-export const updateMyNumberProfile = async (assignmentId: string, data: { display_name: string; retell_agent_id: string; description: string; knowledge_text: string }) => {
+export const updateMyNumberProfile = async (assignmentId: string, data: { display_name: string; retell_agent_id: string; description: string; knowledge_text: string; additional_instructions: string }) => {
   const response = await axiosInstance.put(`/api/admin/phone-numbers/my/${assignmentId}/profile`, data);
-  return response.data;
-};
-
-export const uploadMyNumberProfilePdf = async (assignmentId: string, file: File) => {
-  const formData = new FormData();
-  formData.append("file", file);
-  const response = await axiosInstance.post(`/api/admin/phone-numbers/my/${assignmentId}/profile/pdf`, formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
   return response.data;
 };
 

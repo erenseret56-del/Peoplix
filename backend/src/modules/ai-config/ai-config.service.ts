@@ -57,14 +57,9 @@ export class AIConfigService {
     const companyIdFilter = ObjectId.isValid(companyId)
       ? { $in: [companyId, new ObjectId(companyId)] }
       : companyId;
-    const [cfg, company, documents] = await Promise.all([
+    const [cfg, company] = await Promise.all([
       aiConfigRepository.findByCompanyId(companyId),
       companiesRepository.findById(companyId),
-      getCollection(Collections.DOCUMENTS)
-        .find({ company_id: companyIdFilter, status: 'active' })
-        .project({ title: 1, description: 1, content_text: 1 })
-        .limit(100)
-        .toArray(),
     ]);
 
     if (!company) throw new NotFoundError('Company not found');
@@ -102,19 +97,14 @@ export class AIConfigService {
     }
 
     const knowledgeContext = [
-      'Use only the client documents below to answer questions. If the answer is not present, say that it is not available in the provided documents.',
-      ...(documents.length ? documents.map((document: any) => [
-        `Knowledge document: ${document.title || 'Untitled'}`,
-        document.description || '',
-        document.content_text || '',
-      ].filter(Boolean).join('\n')) : ['No client documents have been uploaded.']),
-      ...(profile ? [
-        `Number profile: ${profile.display_name || 'Unnamed number profile'}`,
-        profile.description || '',
-        profile.knowledge_text || '',
-        profile.knowledge_file_text || '',
-      ].filter(Boolean).join('\n') : []),
-    ].join('\n\n').slice(0, 100000);
+      'Use only the saved company and phone information below to answer questions. If the answer is not present, say that the information is not available.',
+      `Company: ${company.name}`,
+      company.description || '',
+      profile ? `Phone number: ${profile.display_name || 'Unnamed number profile'}` : '',
+      profile?.description || '',
+      profile?.knowledge_text || '',
+      profile?.additional_instructions ? `Additional instructions: ${profile.additional_instructions}` : '',
+    ].filter(Boolean).join('\n\n').slice(0, 100000);
 
     const normalizedPhoneNumber = assignment?.phone_number || options.phoneNumber || company.phone || '';
     const dynamicVars: RetellDynamicVariables = {
@@ -153,7 +143,7 @@ export class AIConfigService {
       numberProfileFound: Boolean(profile),
       companyKnowledgeFound: Boolean(knowledgeContext.trim()),
       companyKnowledgeLength: knowledgeContext.length,
-      documentsCount: documents.length,
+      documentsCount: 0,
       dynamicVariableKeys: Object.keys(dynamicVars),
     }, 'Resolved canonical call context');
 

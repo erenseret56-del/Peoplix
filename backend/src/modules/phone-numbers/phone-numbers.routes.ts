@@ -96,6 +96,7 @@ export async function phoneNumbersRoutes(fastify: FastifyInstance) {
       retell_agent_id: z.string().trim().max(255).default(''),
       description: z.string().max(100000).default(''),
       knowledge_text: z.string().max(100000).default(''),
+      additional_instructions: z.string().max(100000).default(''),
     }).safeParse(request.body);
     if (!parsed.success) throw new ValidationError('Invalid phone-specific company data', parsed.error.errors);
     const assignment = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({ _id: new ObjectId(assignmentId), company_id: companyId, status: 'assigned' });
