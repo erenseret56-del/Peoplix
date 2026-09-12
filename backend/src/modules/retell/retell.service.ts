@@ -14,7 +14,16 @@ interface SearchResult {
 function normalizePhoneNumber(phone?: string): string | null {
   if (!phone) return null;
   const digits = phone.replace(/\D/g, '');
-  return digits ? `+${digits}` : null;
+  // PHONE_ASSIGNMENTS.normalized_phone_number is stored as digits only by
+  // the Twilio assignment flow. Keep the Retell lookup canonical with that
+  // persisted format (E.164 formatting is retained in phone_number).
+  return digits || null;
+}
+
+function phoneNumberVariants(normalized: string): string[] {
+  // Include the historical +digits form so records created by older builds
+  // remain resolvable during/after deployment.
+  return [normalized, `+${normalized}`];
 }
 
 export class RetellService {
@@ -25,7 +34,7 @@ export class RetellService {
 
     const existing = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({
       company_id: companyId,
-      normalized_phone_number: normalized,
+      normalized_phone_number: { $in: phoneNumberVariants(normalized) },
     });
 
     if (existing) {
@@ -92,7 +101,7 @@ export class RetellService {
     if (!normalized) return null;
 
     const assignment = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne(
-      { normalized_phone_number: normalized, status: 'assigned' },
+      { normalized_phone_number: { $in: phoneNumberVariants(normalized) }, status: 'assigned' },
       { projection: { _id: 1, company_id: 1, phone_number: 1 } },
     );
 
@@ -277,7 +286,9 @@ export class RetellService {
     metadata?: Record<string, any>;
     started_at?: string;
   }): Promise<void> {
-    const phoneNumber = payload.to_number || payload.from_number;
+    const phoneNumber = payload.to_number
+      || payload.metadata?.phone_number
+      || payload.from_number;
     const companyId = payload.metadata?.company_id
       || await this.resolveCompanyFromPhone(phoneNumber);
 

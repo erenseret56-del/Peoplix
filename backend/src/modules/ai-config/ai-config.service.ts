@@ -83,7 +83,7 @@ export class AIConfigService {
       const normalized = normalizePhoneNumber(options.phoneNumber);
       assignment = normalized
         ? await getCollection(Collections.PHONE_ASSIGNMENTS).findOne(
-          { company_id: companyIdFilter, normalized_phone_number: normalized, status: 'assigned' },
+          { company_id: companyIdFilter, normalized_phone_number: { $in: phoneNumberVariants(normalized) }, status: 'assigned' },
             { projection: { _id: 1, company_id: 1, phone_number: 1 } },
           )
         : null;
@@ -256,7 +256,15 @@ export class AIConfigService {
 function normalizePhoneNumber(phone?: string): string | null {
   if (!phone) return null;
   const digits = phone.replace(/\D/g, '');
-  return digits ? `+${digits}` : null;
+  // PHONE_ASSIGNMENTS.normalized_phone_number is stored as digits only by
+  // the Twilio assignment flow. Keep this lookup consistent with persisted
+  // data while retaining the display number separately.
+  return digits || null;
+}
+
+function phoneNumberVariants(normalized: string): string[] {
+  // Support records written by the earlier +digits normalization behavior.
+  return [normalized, `+${normalized}`];
 }
 
 function resolveTemplate(template: string, vars: Record<string, string | undefined>): string {
