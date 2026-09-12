@@ -33,11 +33,15 @@ export class RetellService {
     if (!normalized) return null;
 
     const existing = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({
-      company_id: companyId,
       normalized_phone_number: { $in: phoneNumberVariants(normalized) },
+      status: 'assigned',
     });
 
     if (existing) {
+      if (!existing.company_id || String(existing.company_id) !== companyId) {
+        logger.error({ companyId, existingCompanyId: existing.company_id, normalized }, 'Inbound call attempted to use a phone assignment owned by another tenant');
+        throw new Error('Phone number is already assigned to another company');
+      }
       if (twilioSid && !existing.twilio_sid) {
         await getCollection(Collections.PHONE_ASSIGNMENTS).updateOne(
           { _id: existing._id },
@@ -58,8 +62,24 @@ export class RetellService {
       updated_at: new Date(),
     };
 
-    const result = await getCollection(Collections.PHONE_ASSIGNMENTS).insertOne(record);
-    return { _id: result.insertedId, phone_number: phoneNumber };
+    try {
+      const result = await getCollection(Collections.PHONE_ASSIGNMENTS).insertOne(record);
+      return { _id: result.insertedId, phone_number: phoneNumber };
+    } catch (error) {
+      // A concurrent webhook may have created the assignment. Re-read it and
+      // only accept it when it belongs to this same tenant.
+      if (error && typeof error === 'object' && 'code' in error && (error as { code?: number }).code === 11000) {
+        const concurrent = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({
+          normalized_phone_number: { $in: phoneNumberVariants(normalized) },
+          status: 'assigned',
+        });
+        if (concurrent && String(concurrent.company_id) === companyId) {
+          return { _id: concurrent._id, phone_number: concurrent.phone_number || phoneNumber };
+        }
+        throw new Error('Phone number is already assigned to another company');
+      }
+      throw error;
+    }
   }
 
   async resolveCompanyFromCall(callId: string): Promise<string | null> {
@@ -289,7 +309,11 @@ export class RetellService {
     const phoneNumber = payload.to_number
       || payload.metadata?.phone_number
       || payload.from_number;
-    const companyId = payload.metadata?.company_id
+    // The persisted phone assignment is authoritative for tenant routing.
+    // Metadata is only a fallback for legacy calls with no assignment row.
+    const resolvedPhoneAssignment = await this.resolvePhoneAssignmentForNumber(phoneNumber);
+    const companyId = resolvedPhoneAssignment?.company_id
+      || payload.metadata?.company_id
       || await this.resolveCompanyFromPhone(phoneNumber);
 
     if (!companyId) {
@@ -370,7 +394,9 @@ export class RetellService {
 
     if (!updated) {
       const phoneNumber = payload.to_number || payload.from_number;
-      const companyId = payload.metadata?.company_id
+      const resolvedPhoneAssignment = await this.resolvePhoneAssignmentForNumber(phoneNumber);
+      const companyId = resolvedPhoneAssignment?.company_id
+        || payload.metadata?.company_id
         || await this.resolveCompanyFromPhone(phoneNumber);
 
       if (!companyId) {

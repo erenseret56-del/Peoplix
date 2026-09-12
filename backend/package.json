@@ -10,7 +10,7 @@
     "start": "node dist/server.js",
     "lint": "eslint src --ext .ts",
     "db:seed": "node --loader tsx src/infrastructure/database/seed.ts",
-    "db:phone-assignments": "node --loader tsx src/infrastructure/database/phone-assignment-migration.ts"
+    "db:phone-assignments": "tsx src/infrastructure/database/phone-assignment-migration.ts"
   },
   "keywords": [
     "saas",
