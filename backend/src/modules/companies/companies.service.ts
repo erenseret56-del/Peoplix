@@ -2,14 +2,16 @@ import { companiesRepository } from './companies.repository.js';
 import { authRepository } from '../auth/auth.repository.js';
 import { authService } from '../auth/auth.service.js';
 import { invalidateTenantCache } from '../../middleware/tenant.js';
-import { ConflictError, NotFoundError, ValidationError } from '../../middleware/errorHandler.js';
+import { AppError, ConflictError, NotFoundError, ValidationError } from '../../middleware/errorHandler.js';
 import { CompanyStatus, UserRole } from '../../types/index.js';
 import { logger } from '../../config/logger.js';
 import { config } from '../../config/env.js';
 import { getCollection, Collections } from '../../infrastructure/database/index.js';
 import { aiConfigRepository } from '../ai-config/ai-config.repository.js';
 import { AI_CONFIG_COLLECTION } from '../ai-config/ai-config.types.js';
-import { ObjectId } from 'mongodb';
+import { ClientSession, ObjectId } from 'mongodb';
+import { getMongoClient } from '../../infrastructure/database/index.js';
+import { retellClient } from '../retell/retell.client.js';
 
 function generateSlug(name: string): string {
   return name
@@ -190,9 +192,48 @@ export class CompaniesService {
       .find({ company_id: companyIdFilters }, { projection: { _id: 1 } })
       .toArray();
 
-    const cleanup = async (step: string, operation: () => Promise<unknown>) => {
+    const phoneAssignments = await getCollection(Collections.PHONE_ASSIGNMENTS)
+      .find({ company_id: companyIdFilters }, { projection: { _id: 1, phone_number: 1 } })
+      .toArray();
+
+    // Retell phone numbers are external resources. Clean them before the
+    // database transaction so a successful company deletion cannot leave
+    // an active Retell number pointing at a deleted tenant.
+    const retellPhoneNumbers = [...new Set(phoneAssignments
+      .map((assignment) => this.toRetellPhoneNumber(assignment.phone_number))
+      .filter((phoneNumber): phoneNumber is string => Boolean(phoneNumber)))];
+
+    if (retellPhoneNumbers.length && !config.retell.apiKey) {
+      throw new AppError(
+        'RETELL_CLEANUP_REQUIRED',
+        'Retell cleanup is required before deleting this client, but RETELL_API_KEY is not configured.',
+        503,
+      );
+    }
+
+    for (const phoneNumber of retellPhoneNumbers) {
       try {
-        const result = await operation();
+        await retellClient.deletePhoneNumber(phoneNumber);
+        logger.info({ companyId: id, phoneNumber }, 'Retell phone number deleted during company cleanup');
+      } catch (error) {
+        // A missing Retell number is already cleaned up and is safe to retry.
+        if (retellClient.isNotFoundError(error)) {
+          logger.info({ companyId: id, phoneNumber }, 'Retell phone number already absent during company cleanup');
+          continue;
+        }
+
+        logger.error({ err: error, companyId: id, phoneNumber }, 'Retell phone cleanup failed; database deletion aborted');
+        throw new AppError(
+          'RETELL_CLEANUP_FAILED',
+          'Retell phone-number cleanup failed. No database records were deleted; fix the Retell configuration and retry.',
+          502,
+        );
+      }
+    }
+
+    const cleanup = async (step: string, operation: (session: ClientSession) => Promise<unknown>) => {
+      try {
+        const result = await operation(session);
         logger.info({ companyId: id, step }, 'Company deletion step completed');
         return result;
       } catch (error) {
@@ -201,30 +242,46 @@ export class CompaniesService {
       }
     };
 
-    await cleanup('release phone assignments', () => getCollection(Collections.PHONE_ASSIGNMENTS).updateMany(
-      { company_id: companyIdFilters },
-      { $set: { status: 'available', released_at: new Date(), updated_at: new Date() }, $unset: { company_id: '' } },
-    ));
-    await cleanup('remove number profiles', () => getCollection(Collections.NUMBER_PROFILES).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove call transcripts', () => getCollection(Collections.CALL_TRANSCRIPTS).deleteMany({
-      call_log_id: { $in: callLogs.map((call) => call._id!.toString()) },
-    }));
-    await cleanup('remove call logs', () => getCollection(Collections.CALL_LOGS).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove company users', () => getCollection(Collections.COMPANY_USERS).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove user accounts', () => getCollection(Collections.USERS).deleteMany({ _id: { $in: userObjectIdsToDelete } }));
-    await cleanup('remove employees', () => getCollection(Collections.EMPLOYEES).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove departments', () => getCollection(Collections.DEPARTMENTS).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove designations', () => getCollection(Collections.DESIGNATIONS).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove customers', () => getCollection(Collections.CUSTOMERS).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove company documents', () => getCollection(Collections.DOCUMENTS).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove FAQs', () => getCollection(Collections.FAQS).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove policies', () => getCollection(Collections.POLICIES).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove company Retell mappings', () => getCollection(Collections.RETELL_AGENTS).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove AI configuration', () => getCollection(AI_CONFIG_COLLECTION).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove audit logs', () => getCollection(Collections.AUDIT_LOGS).deleteMany({ company_id: companyIdFilters }));
-    await cleanup('remove company', () => companiesRepository.hardDelete(id));
+    const session = getMongoClient().startSession();
+    try {
+      await session.withTransaction(async () => {
+        const dbOptions = { session };
+        await cleanup('release phone assignments', () => getCollection(Collections.PHONE_ASSIGNMENTS).updateMany(
+          { company_id: companyIdFilters },
+          { $set: { status: 'available', released_at: new Date(), updated_at: new Date() }, $unset: { company_id: '' } },
+          dbOptions,
+        ));
+        await cleanup('remove number profiles', () => getCollection(Collections.NUMBER_PROFILES).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove call transcripts', () => getCollection(Collections.CALL_TRANSCRIPTS).deleteMany({
+          call_log_id: { $in: callLogs.map((call) => call._id!.toString()) },
+        }, dbOptions));
+        await cleanup('remove call logs', () => getCollection(Collections.CALL_LOGS).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove company users', () => getCollection(Collections.COMPANY_USERS).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove user accounts', () => getCollection(Collections.USERS).deleteMany({ _id: { $in: userObjectIdsToDelete } }, dbOptions));
+        await cleanup('remove employees', () => getCollection(Collections.EMPLOYEES).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove departments', () => getCollection(Collections.DEPARTMENTS).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove designations', () => getCollection(Collections.DESIGNATIONS).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove customers', () => getCollection(Collections.CUSTOMERS).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove company documents', () => getCollection(Collections.DOCUMENTS).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove FAQs', () => getCollection(Collections.FAQS).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove policies', () => getCollection(Collections.POLICIES).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove company Retell mappings', () => getCollection(Collections.RETELL_AGENTS).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove AI configuration', () => getCollection(AI_CONFIG_COLLECTION).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove audit logs', () => getCollection(Collections.AUDIT_LOGS).deleteMany({ company_id: companyIdFilters }, dbOptions));
+        await cleanup('remove company', () => companiesRepository.hardDelete(id, session));
+      });
+    } finally {
+      await session.endSession();
+    }
+    await aiConfigRepository.invalidateCache(id);
     await invalidateTenantCache(id);
     logger.info({ companyId: id, phoneAssignmentsReleased: true }, 'Company and tenant records permanently deleted');
+  }
+
+  private toRetellPhoneNumber(phoneNumber?: string): string | null {
+    if (!phoneNumber) return null;
+    const digits = phoneNumber.replace(/\D/g, '');
+    return digits ? `+${digits}` : null;
   }
 
   async getStats(companyId: string) {

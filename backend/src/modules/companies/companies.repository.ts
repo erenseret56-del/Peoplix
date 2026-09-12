@@ -1,4 +1,4 @@
-import { ObjectId, Filter } from 'mongodb';
+import { ObjectId, Filter, ClientSession } from 'mongodb';
 import type { Document } from 'mongodb';
 import { getCollection, Collections } from '../../infrastructure/database/index.js';
 import { CompanyStatus } from '../../types/index.js';
@@ -64,8 +64,8 @@ export class CompaniesRepository {
     );
   }
 
-  async hardDelete(id: string): Promise<boolean> {
-    const result = await this.col().deleteOne({ _id: new ObjectId(id) } as any);
+  async hardDelete(id: string, session?: ClientSession): Promise<boolean> {
+    const result = await this.col().deleteOne({ _id: new ObjectId(id) } as any, session ? { session } : undefined);
     return result.deletedCount > 0;
   }
 

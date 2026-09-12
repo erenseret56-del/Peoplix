@@ -107,6 +107,9 @@ class RetellClient {
       throw new Error(`Retell API error: ${res.status} - ${detail}`);
     }
 
+    // Retell returns 204 No Content for successful delete operations.
+    if (res.status === 204) return undefined as T;
+
     return res.json() as Promise<T>;
   }
 
@@ -201,6 +204,14 @@ class RetellClient {
       nickname,
       ...(inboundWebhookUrl ? { inbound_webhook_url: inboundWebhookUrl } : {}),
     });
+  }
+
+  async deletePhoneNumber(phoneNumber: string): Promise<void> {
+    await this.request<void>('DELETE', `/delete-phone-number/${encodeURIComponent(phoneNumber)}`);
+  }
+
+  isNotFoundError(error: unknown): boolean {
+    return error instanceof Error && /Retell API error:\s*404\b/i.test(error.message);
   }
 
   async getCall(callId: string): Promise<RetellCallInfo> {

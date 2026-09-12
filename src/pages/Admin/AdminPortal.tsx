@@ -119,7 +119,7 @@ const AdminPortal = () => {
         toast.success("Client removed");
       } catch (error) {
         console.error("Failed to delete company:", error);
-        toast.error("Failed to remove client");
+        toast.error(error instanceof Error ? error.message : "Failed to remove client");
       }
     }
   };
