@@ -5,13 +5,28 @@ import { aiConfigRepository } from '../ai-config/ai-config.repository.js';
 import { retellClient } from '../retell/retell.client.js';
 import { config } from '../../config/env.js';
 import { logger } from '../../config/logger.js';
-import { NotFoundError } from '../../middleware/errorHandler.js';
+import { ConflictError, NotFoundError } from '../../middleware/errorHandler.js';
 
 function getTwilioClient() {
   if (!config.twilio.accountSid || !config.twilio.authToken) {
     throw new Error('Twilio is not configured. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.');
   }
   return twilio(config.twilio.accountSid, config.twilio.authToken);
+}
+
+function normalizePhoneNumber(phoneNumber?: string): string | null {
+  if (!phoneNumber) return null;
+  const digits = phoneNumber.replace(/\D/g, '');
+  return digits || null;
+}
+
+function phoneNumberVariants(normalizedPhoneNumber: string): string[] {
+  // Read legacy +digits records while all new writes use digits only.
+  return [normalizedPhoneNumber, `+${normalizedPhoneNumber}`];
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && 'code' in error && (error as { code?: number }).code === 11000);
 }
 
 export async function addNumberToSipTrunk(phoneNumberSid: string) {
@@ -158,13 +173,19 @@ export class PhoneNumbersService {
     const selected = available[0];
     if (!selected) throw new Error(`No available Twilio numbers found for ${countryCode}.`);
 
-    const normalizedPhoneNumber = selected.phone_number.replace(/\D/g, '');
+    const normalizedPhoneNumber = normalizePhoneNumber(selected.phone_number);
+    if (!normalizedPhoneNumber) throw new Error('Twilio returned an invalid phone number.');
+
     const existingAssignment = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({
-      company_id: companyId,
-      normalized_phone_number: normalizedPhoneNumber,
-      status: 'assigned',
+      normalized_phone_number: { $in: phoneNumberVariants(normalizedPhoneNumber) },
     });
     if (existingAssignment) {
+      if (existingAssignment.status === 'assigned' && String(existingAssignment.company_id) !== companyId) {
+        throw new ConflictError('This phone number is already assigned to another client.');
+      }
+      if (existingAssignment.status === 'available') {
+        throw new ConflictError('This phone number is already in the available inventory. Reuse it from Available Numbers.');
+      }
       return {
         id: existingAssignment._id.toString(),
         phone_number: existingAssignment.phone_number,
@@ -182,16 +203,22 @@ export class PhoneNumbersService {
     await addNumberToSipTrunk(purchased.sid);
     await bindNumberToCompanyAgent(companyId, purchased.phoneNumber);
     const now = new Date();
-    const result = await getCollection(Collections.PHONE_ASSIGNMENTS).insertOne({
-      company_id: companyId,
-      phone_number: purchased.phoneNumber,
-      normalized_phone_number: purchased.phoneNumber.replace(/\D/g, ''),
-      twilio_sid: purchased.sid,
-      status: 'assigned',
-      assigned_at: now,
-      created_at: now,
-      updated_at: now,
-    });
+    let result;
+    try {
+      result = await getCollection(Collections.PHONE_ASSIGNMENTS).insertOne({
+        company_id: companyId,
+        phone_number: purchased.phoneNumber,
+        normalized_phone_number: normalizePhoneNumber(purchased.phoneNumber),
+        twilio_sid: purchased.sid,
+        status: 'assigned',
+        assigned_at: now,
+        created_at: now,
+        updated_at: now,
+      });
+    } catch (error) {
+      if (isDuplicateKeyError(error)) throw new ConflictError('This phone number is already assigned. Refresh the client list and try again.');
+      throw error;
+    }
 
     return {
       id: result.insertedId.toString(),
@@ -212,9 +239,17 @@ export class PhoneNumbersService {
       .find((number) => number.sid === twilioSid);
     if (!twilioNumber) throw new NotFoundError('Available Twilio number not found');
 
-    const alreadyAssigned = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({ twilio_sid: twilioSid, status: 'assigned' });
+    const normalizedPhoneNumber = normalizePhoneNumber(twilioNumber.phoneNumber);
+    if (!normalizedPhoneNumber) throw new Error('Twilio returned an invalid phone number.');
+
+    const alreadyAssigned = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({
+      $or: [
+        { twilio_sid: twilioSid, status: 'assigned' },
+        { normalized_phone_number: { $in: phoneNumberVariants(normalizedPhoneNumber) }, status: 'assigned' },
+      ],
+    });
     if (alreadyAssigned && String(alreadyAssigned.company_id) !== companyId) {
-      throw new Error('This number is already assigned to another client.');
+      throw new ConflictError('This phone number is already assigned to another client.');
     }
 
     const now = new Date();
@@ -235,25 +270,38 @@ export class PhoneNumbersService {
         reused: true,
       };
     }
-    const released = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({ twilio_sid: twilioSid, status: 'available' });
+    const released = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne({
+      status: 'available',
+      $or: [
+        { twilio_sid: twilioSid },
+        { normalized_phone_number: { $in: phoneNumberVariants(normalizedPhoneNumber) } },
+      ],
+    });
     if (released) {
-      await getCollection(Collections.PHONE_ASSIGNMENTS).updateOne(
-        { _id: released._id },
-        { $set: { company_id: companyId, status: 'assigned', assigned_at: now, released_at: null, updated_at: now } },
+      const claimed = await getCollection(Collections.PHONE_ASSIGNMENTS).updateOne(
+        { _id: released._id, status: 'available', company_id: { $in: [null, ''] } },
+        { $set: { company_id: companyId, phone_number: twilioNumber.phoneNumber, normalized_phone_number: normalizedPhoneNumber, status: 'assigned', assigned_at: now, released_at: null, updated_at: now } },
       );
-      return { id: released._id!.toString(), phone_number: released.phone_number, twilio_sid: twilioSid, company_id: companyId, company_name: company.name, assigned_at: now, reused: true };
+      if (!claimed.matchedCount) throw new ConflictError('This phone number was assigned by another request. Refresh and try again.');
+      return { id: released._id!.toString(), phone_number: twilioNumber.phoneNumber, twilio_sid: twilioSid, company_id: companyId, company_name: company.name, assigned_at: now, reused: true };
     }
 
-    const result = await getCollection(Collections.PHONE_ASSIGNMENTS).insertOne({
-      company_id: companyId,
-      phone_number: twilioNumber.phoneNumber,
-      normalized_phone_number: twilioNumber.phoneNumber.replace(/\D/g, ''),
-      twilio_sid: twilioSid,
-      status: 'assigned',
-      assigned_at: now,
-      created_at: now,
-      updated_at: now,
-    });
+    let result;
+    try {
+      result = await getCollection(Collections.PHONE_ASSIGNMENTS).insertOne({
+        company_id: companyId,
+        phone_number: twilioNumber.phoneNumber,
+        normalized_phone_number: normalizedPhoneNumber,
+        twilio_sid: twilioSid,
+        status: 'assigned',
+        assigned_at: now,
+        created_at: now,
+        updated_at: now,
+      });
+    } catch (error) {
+      if (isDuplicateKeyError(error)) throw new ConflictError('This phone number is already assigned. Refresh the client list and try again.');
+      throw error;
+    }
     return { id: result.insertedId.toString(), phone_number: twilioNumber.phoneNumber, twilio_sid: twilioSid, company_id: companyId, company_name: company.name, assigned_at: now, reused: true };
   }
 

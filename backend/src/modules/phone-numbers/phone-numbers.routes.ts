@@ -38,6 +38,7 @@ export async function phoneNumbersRoutes(fastify: FastifyInstance) {
 
   fastify.post('/assign/:companyId', { preHandler }, async (request, reply) => {
     const { companyId } = request.params as { companyId: string };
+    if (!ObjectId.isValid(companyId)) throw new ValidationError('A valid company ID is required');
     const parsed = countrySchema.safeParse(request.body || {});
     const number = await phoneNumbersService.purchaseAndAssign(
       companyId,
@@ -48,6 +49,7 @@ export async function phoneNumbersRoutes(fastify: FastifyInstance) {
 
   fastify.post('/assign-existing/:companyId', { preHandler }, async (request, reply) => {
     const { companyId } = request.params as { companyId: string };
+    if (!ObjectId.isValid(companyId)) throw new ValidationError('A valid company ID is required');
     const parsed = z.object({ twilioSid: z.string().min(1) }).safeParse(request.body || {});
     if (!parsed.success) throw new ValidationError('A Twilio SID from available inventory is required', parsed.error.errors);
     const number = await phoneNumbersService.assignExisting(companyId, parsed.data.twilioSid);

@@ -233,6 +233,10 @@ export async function createIndexes(): Promise<void> {
     // Phone assignments
     await database.collection(Collections.PHONE_ASSIGNMENTS).createIndexes([
       { key: { company_id: 1, normalized_phone_number: 1 }, unique: true },
+      // Twilio phone numbers are physical platform resources and cannot be
+      // owned by two companies. The migration command creates this index
+      // after inspecting/canonicalizing legacy records.
+      { key: { normalized_phone_number: 1 }, name: 'normalized_phone_number_1_unique', unique: true },
       { key: { company_id: 1, status: 1 } },
       { key: { phone_number: 1 } },
       { key: { twilio_sid: 1 }, sparse: true },
