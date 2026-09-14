@@ -1,191 +1,38 @@
 import { useEffect, useMemo, useState } from "react";
-import { Save, Phone, PhoneCall } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, FileText, Phone, PhoneCall, RefreshCw, Save } from "lucide-react";
 import toast from "react-hot-toast";
 import { useNavigate, useParams } from "react-router-dom";
 import { RetellWebClient } from "retell-client-js-sdk";
-import {
-  createCompanyWebCall,
-  getMyNumberProfiles,
-  getMyRetellModels,
-  updateMyNumberProfile,
-} from "../../api/api";
+import { analyzeMyAIKnowledge, createCompanyWebCall, getMyAIKnowledge, getMyCompanyProfile, getMyNumberProfiles, getMyRetellModels, updateMyCompanyProfile, updateMyNumberProfile } from "../../api/api";
 import ActiveCallModal from "../../components/LandingPageComponents/ActiveCallModal";
 
-interface NumberProfile {
-  display_name: string;
-  retell_agent_id: string;
-  description: string;
-  knowledge_text: string;
-  additional_instructions: string;
-}
+type Knowledge = { company_knowledge: string; faqs: string; hr_policies: string; important_information: string; employee_information: string; working_hours: string; leave_information: string };
+type Company = { name: string; email?: string; phone?: string; website?: string; description?: string; address_line1?: string; address_line2?: string; city?: string; state?: string; country?: string; postal_code?: string; knowledge_center?: Partial<Knowledge> };
+type Analysis = { status: "ready" | "attention"; last_analyzed_at: string | null; completeness: number; sections: Record<string, boolean>; summary: string; recommendations: string[]; counts: { employees: number; departments: number; policies: number; faqs: number; documents: number } };
+type NumberProfile = { display_name: string; retell_agent_id: string; description: string; knowledge_text: string; additional_instructions: string };
+const blankKnowledge: Knowledge = { company_knowledge: "", faqs: "", hr_policies: "", important_information: "", employee_information: "", working_hours: "", leave_information: "" };
+const blankNumber: NumberProfile = { display_name: "", retell_agent_id: "", description: "", knowledge_text: "", additional_instructions: "" };
 
 export default function CompanyData() {
-  const navigate = useNavigate();
-  const { numberId } = useParams<{ numberId: string }>();
-  const [numberProfiles, setNumberProfiles] = useState<{ id: string; phone_number: string; profile?: Partial<NumberProfile> | null }[]>([]);
-  const [selectedNumberId, setSelectedNumberId] = useState(numberId || "");
-  const [numberData, setNumberData] = useState<NumberProfile>({ display_name: "", retell_agent_id: "", description: "", knowledge_text: "", additional_instructions: "" });
-  const [savingNumberData, setSavingNumberData] = useState(false);
-  const [retellModels, setRetellModels] = useState<{ agent_id: string; agent_name: string }[]>([]);
-  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
-  const [isCallConnected, setIsCallConnected] = useState(false);
-  const [isCallLoading, setIsCallLoading] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [activeAgentName, setActiveAgentName] = useState("Peoplix AI Agent");
-  const sdk = useMemo(() => new RetellWebClient(), []);
-
-  const loadData = async () => {
-    try {
-      const numberResponse = await getMyNumberProfiles();
-      const profiles = numberResponse.data || [];
-      setNumberProfiles(profiles);
-      const selectedProfile = profiles.find((profile: { id: string }) => profile.id === numberId) || profiles[0];
-      if (selectedProfile && (numberId || !selectedNumberId)) {
-        setSelectedNumberId(selectedProfile.id);
-        setNumberData({ display_name: "", retell_agent_id: "", description: "", knowledge_text: "", additional_instructions: "", ...selectedProfile.profile });
-      }
-      const modelResponse = await getMyRetellModels(selectedProfile?.id).catch(() => ({ data: [] }));
-      setRetellModels(modelResponse.data || []);
-      if (modelResponse.data?.[0]) {
-        setNumberData((current) => ({ ...current, retell_agent_id: modelResponse.data[0].agent_id }));
-      }
-    } catch (error) {
-      console.error("Failed to load company data:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to load company data");
-    } finally {
-    }
-  };
-
-  useEffect(() => {
-    void loadData();
-  }, [numberId]);
-
-  useEffect(() => {
-    sdk.on("call_started", () => {
-      setIsCallConnected(true);
-      setIsCallLoading(false);
-    });
-    sdk.on("call_ended", () => {
-      setIsCallModalOpen(false);
-      setIsCallConnected(false);
-      setIsMuted(false);
-    });
-    sdk.on("error", (error) => {
-      console.error("Retell SDK error:", error);
-      toast.error("An error occurred during the call.");
-      setIsCallModalOpen(false);
-      setIsCallLoading(false);
-    });
-    return () => {
-      sdk.off("call_started");
-      sdk.off("call_ended");
-      sdk.off("error");
-    };
-  }, [sdk]);
-
-  const selectNumber = (assignmentId: string) => {
-    navigate(`/company-data/${assignmentId}`);
-  };
-
-  const saveNumberData = async () => {
-    if (!selectedNumberId) return;
-    setSavingNumberData(true);
-    try {
-      const response = await updateMyNumberProfile(selectedNumberId, numberData);
-      setNumberProfiles((current) => current.map((number) => number.id === selectedNumberId ? { ...number, profile: numberData } : number));
-      toast.success(response.warning || "Phone-specific AI data saved");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save phone-specific data");
-    } finally {
-      setSavingNumberData(false);
-    }
-  };
-
-  const startNumberDemoCall = async () => {
-    if (!selectedNumberId || isCallLoading) return;
-    setIsCallLoading(true);
-    try {
-      const model = retellModels[0];
-      const call = await createCompanyWebCall(selectedNumberId);
-      setActiveAgentName(model?.agent_name || "Peoplix AI Agent");
-      setIsCallModalOpen(true);
-      await sdk.startCall({ accessToken: call.access_token });
-    } catch (error) {
-      console.error("Failed to start phone-specific demo call:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to start demo call");
-      setIsCallLoading(false);
-    }
-  };
-
-  const endNumberDemoCall = () => {
-    sdk.stopCall();
-    setIsCallModalOpen(false);
-  };
-
-  const toggleMute = () => {
-    const nextMuted = !isMuted;
-    const internalSdk = sdk as any;
-    if (internalSdk.room?.localParticipant) {
-      internalSdk.room.localParticipant.setMicrophoneEnabled(!nextMuted);
-      setIsMuted(nextMuted);
-    }
-  };
-
-  const selectedNumber = numberProfiles.find((number) => number.id === selectedNumberId);
-
-  if (!numberId) {
-    return (
-      <main className="min-h-screen bg-[#FCFAF5] p-4 sm:p-6">
-        <div className="mx-auto max-w-5xl space-y-6">
-          <header>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-gray-400">Knowledge Base</p>
-            <h1 className="mt-2 text-3xl font-extrabold text-gray-900">Company Data</h1>
-            <p className="mt-2 text-gray-500">Choose a phone number to manage its Retell model and knowledge.</p>
-          </header>
-          <section className="rounded-2xl border border-[#E4DAC3] bg-white p-5 shadow-sm">
-            <h2 className="text-xl font-bold text-gray-900">Your phone numbers</h2>
-            <p className="mt-1 text-sm text-gray-500">Each number has its own description, instructions, model, and company knowledge.</p>
-            {numberProfiles.length === 0 ? <p className="mt-5 rounded-xl bg-[#F7F3EB] p-4 text-sm text-gray-500">No phone numbers have been assigned to your company yet.</p> : <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              {numberProfiles.map((number) => <button key={number.id} type="button" onClick={() => selectNumber(number.id)} className="flex items-center justify-between rounded-xl border border-gray-200 p-4 text-left transition hover:border-[#C9BC9E] hover:bg-[#F7F3EB]"><span className="flex items-center gap-3"><span className="rounded-lg bg-[#EFE8D8] p-2 text-[#8B7355]"><Phone size={18} /></span><span><span className="block font-bold text-gray-900">{number.phone_number}</span><span className="block text-xs text-gray-500">{number.profile?.display_name || "Configure this number"}</span></span></span><span className="text-sm font-semibold text-[#8B7355]">Open</span></button>)}
-            </div>}
-          </section>
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <main className="min-h-screen bg-[#FCFAF5] p-4 sm:p-6">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <header>
-          <button type="button" onClick={() => navigate("/company-data")} className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-[#8B7355] hover:text-[#6B5A3E]">&larr; Back to phone numbers</button>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-gray-400">Knowledge Base</p>
-          <h1 className="mt-2 text-3xl font-extrabold text-gray-900">{selectedNumber?.phone_number || "Phone number"}</h1>
-          <p className="mt-2 text-gray-500">Configure the Retell agent and knowledge used for this number&apos;s calls.</p>
-        </header>
-
-        <section className="rounded-2xl border border-[#E4DAC3] bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">Company data</h2>
-              <p className="mt-1 text-sm text-gray-500">Manage the information and knowledge used when callers reach this phone number.</p>
-            </div>
-            <span className="inline-flex items-center gap-2 rounded-xl bg-[#8B7355] px-3 py-2 text-sm font-semibold text-white"><Phone size={15} />{selectedNumber?.phone_number || numberId}</span>
-          </div>
-          {numberProfiles.length === 0 ? <p className="mt-5 rounded-xl bg-[#F7F3EB] p-4 text-sm text-gray-500">No phone numbers have been assigned to your company yet.</p> : <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <label className="text-sm font-semibold text-gray-700">Number display name<input value={numberData.display_name} onChange={(event) => setNumberData({ ...numberData, display_name: event.target.value })} className="mt-2 w-full rounded-xl border border-gray-200 p-3 outline-none focus:border-[#8B7355]" placeholder="Support line" /></label>
-            <label className="text-sm font-semibold text-gray-700">Retell model<select value={numberData.retell_agent_id} onChange={(event) => setNumberData({ ...numberData, retell_agent_id: event.target.value })} className="mt-2 w-full rounded-xl border border-gray-200 bg-white p-3 outline-none focus:border-[#8B7355]"><option value="">Select a Retell model</option>{retellModels.map((model) => <option key={model.agent_id} value={model.agent_id}>{model.agent_name} ({model.agent_id})</option>)}</select></label>
-            <label className="text-sm font-semibold text-gray-700 md:col-span-2">Description for this number<textarea value={numberData.description} onChange={(event) => setNumberData({ ...numberData, description: event.target.value })} className="mt-2 min-h-28 w-full rounded-xl border border-gray-200 p-3 outline-none focus:border-[#8B7355]" placeholder="Describe the service, purpose, hours, and answers for this number." /></label>
-            <label className="text-sm font-semibold text-gray-700 md:col-span-2">Company Knowledge<textarea value={numberData.knowledge_text} onChange={(event) => setNumberData({ ...numberData, knowledge_text: event.target.value })} className="mt-2 min-h-40 w-full rounded-xl border border-gray-200 p-3 outline-none focus:border-[#8B7355]" placeholder="Enter everything Ava should know about this company and this phone number: company information, services, hours, FAQs, policies, employees, procedures, and other useful details." /></label>
-            <label className="text-sm font-semibold text-gray-700 md:col-span-2">Additional instructions<textarea value={numberData.additional_instructions} onChange={(event) => setNumberData({ ...numberData, additional_instructions: event.target.value })} className="mt-2 min-h-28 w-full rounded-xl border border-gray-200 p-3 outline-none focus:border-[#8B7355]" placeholder="Be professional. If the answer is not in the company information, say it is not available." /></label>
-            <div className="flex flex-wrap gap-3 md:col-span-2">
-              <button onClick={() => void saveNumberData()} disabled={savingNumberData} className="inline-flex w-fit items-center gap-2 rounded-xl bg-[#8B7355] px-5 py-3 font-semibold text-white disabled:opacity-50"><Save size={17} /> {savingNumberData ? "Saving..." : "Save phone data"}</button>
-              <button onClick={() => void startNumberDemoCall()} disabled={isCallLoading || !retellModels.length} className="inline-flex w-fit items-center gap-2 rounded-xl bg-gray-900 px-5 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"><PhoneCall size={17} /> {isCallLoading ? "Connecting..." : "Start live demo call"}</button>
-            </div>
-          </div>}
-        </section>
-      </div>
-      <ActiveCallModal isOpen={isCallModalOpen} isConnected={isCallConnected} onClose={endNumberDemoCall} isMuted={isMuted} onToggleMute={toggleMute} agentName={activeAgentName} />
-    </main>
-  );
+  const navigate = useNavigate(); const { numberId } = useParams<{ numberId: string }>();
+  const [company, setCompany] = useState<Company>({ name: "" }); const [knowledge, setKnowledge] = useState(blankKnowledge); const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [saving, setSaving] = useState(false); const [analyzing, setAnalyzing] = useState(false); const [numbers, setNumbers] = useState<{ id: string; phone_number: string; profile?: Partial<NumberProfile> | null }[]>([]); const [selectedId, setSelectedId] = useState(numberId || ""); const [numberData, setNumberData] = useState(blankNumber); const [models, setModels] = useState<{ agent_id: string; agent_name: string }[]>([]); const [savingNumber, setSavingNumber] = useState(false);
+  const [callOpen, setCallOpen] = useState(false); const [callConnected, setCallConnected] = useState(false); const [callLoading, setCallLoading] = useState(false); const [muted, setMuted] = useState(false); const [agentName, setAgentName] = useState("Peoplix AI Agent"); const sdk = useMemo(() => new RetellWebClient(), []);
+  const load = async () => { try { const [profile, ai, phone] = await Promise.all([getMyCompanyProfile(), getMyAIKnowledge(), getMyNumberProfiles()]); setCompany(profile.data); setKnowledge({ ...blankKnowledge, ...profile.data.knowledge_center }); setAnalysis(ai.data); const list = phone.data || []; setNumbers(list); const selected = list.find((item: { id: string }) => item.id === numberId) || list[0]; if (selected) { setSelectedId(selected.id); setNumberData({ ...blankNumber, ...selected.profile }); const result = await getMyRetellModels(selected.id).catch(() => ({ data: [] })); setModels(result.data || []); } } catch (error) { toast.error(error instanceof Error ? error.message : "Failed to load company data"); } };
+  useEffect(() => { void load(); }, [numberId]); useEffect(() => { sdk.on("call_started", () => { setCallConnected(true); setCallLoading(false); }); sdk.on("call_ended", () => { setCallOpen(false); setCallConnected(false); setMuted(false); }); sdk.on("error", () => { toast.error("An error occurred during the call."); setCallOpen(false); setCallLoading(false); }); return () => { sdk.off("call_started"); sdk.off("call_ended"); sdk.off("error"); }; }, [sdk]);
+  const saveCompany = async () => { setSaving(true); try { await updateMyCompanyProfile({ ...company, name: company.name.trim(), knowledge_center: knowledge }); setAnalysis((await getMyAIKnowledge()).data); toast.success("Company knowledge saved and analyzed"); } catch (error) { toast.error(error instanceof Error ? error.message : "Failed to save company data"); } finally { setSaving(false); } };
+  const analyze = async () => { setAnalyzing(true); try { setAnalysis((await analyzeMyAIKnowledge()).data); toast.success("AI knowledge updated"); } catch (error) { toast.error(error instanceof Error ? error.message : "Analysis failed"); } finally { setAnalyzing(false); } };
+  const saveNumber = async () => { if (!selectedId) return; setSavingNumber(true); try { await updateMyNumberProfile(selectedId, numberData); toast.success("Phone configuration saved"); } catch (error) { toast.error(error instanceof Error ? error.message : "Failed to save phone configuration"); } finally { setSavingNumber(false); } };
+  const startCall = async () => { if (!selectedId) return; setCallLoading(true); try { const call = await createCompanyWebCall(selectedId); setAgentName(models[0]?.agent_name || "Peoplix AI Agent"); setCallOpen(true); await sdk.startCall({ accessToken: call.access_token }); } catch (error) { toast.error(error instanceof Error ? error.message : "Failed to start demo call"); setCallLoading(false); } };
+  const companyField = (label: string, key: keyof Company) => <label className="text-sm font-semibold text-gray-700">{label}<input value={String(company[key] || "")} onChange={e => setCompany({ ...company, [key]: e.target.value })} placeholder="Information not provided" className="mt-2 w-full rounded-xl border border-[#E7E0D5] bg-[#FFFEFC] p-3 font-normal outline-none focus:border-[#9C8055]" /></label>;
+  const knowledgeField = (label: string, key: keyof Knowledge) => <label className="text-sm font-semibold text-gray-700">{label}<textarea value={knowledge[key]} onChange={e => setKnowledge({ ...knowledge, [key]: e.target.value })} placeholder="Information not provided" className="mt-2 min-h-32 w-full rounded-xl border border-[#E7E0D5] bg-[#FFFEFC] p-3 font-normal outline-none focus:border-[#9C8055]" /></label>;
+  const selected = numbers.find(item => item.id === selectedId);
+  return <main className="min-h-screen bg-[#FCFAF5] p-4 sm:p-8"><div className="mx-auto max-w-6xl space-y-6"><header><p className="text-xs font-bold uppercase tracking-[0.2em] text-[#9C8055]">PEOPLIX / AI OPERATIONS</p><h1 className="mt-2 text-4xl font-extrabold tracking-tight text-gray-900">Company Data</h1><p className="mt-2 text-gray-500">The living knowledge center for your company&apos;s employee conversations.</p></header>
+    <section className="rounded-2xl border border-[#E4DAC3] bg-[#F1E9D9] p-6 shadow-sm"><div className="flex items-start gap-4"><span className="rounded-xl bg-white p-3 text-[#9C8055]"><FileText size={22} /></span><div><h2 className="text-xl font-bold text-gray-900">AI Knowledge Center</h2><p className="mt-1 text-sm leading-6 text-gray-600">Everything you add here helps PEOPLIX understand your company and answer employee questions accurately.</p><p className="mt-4 text-sm font-semibold text-gray-700">HR enters information <span className="mx-2 text-[#9C8055]">-&gt;</span> PEOPLIX analyzes it <span className="mx-2 text-[#9C8055]">-&gt;</span> AI uses it in conversations</p></div></div></section>
+    <section className="rounded-2xl border border-[#E4DAC3] bg-white p-6 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-bold text-gray-900">Company Information</h2><p className="mt-1 text-sm text-gray-500">This authenticated company record powers the client portal and future calls.</p></div><button onClick={() => void saveCompany()} disabled={saving || !company.name.trim()} className="inline-flex items-center gap-2 rounded-xl bg-[#8B7355] px-5 py-3 font-semibold text-white disabled:opacity-50"><Save size={17} />{saving ? "Saving..." : "Save company data"}</button></div><div className="mt-5 grid gap-4 md:grid-cols-2">{companyField("Company Name", "name")}{companyField("Company Email", "email")}{companyField("Company Phone", "phone")}{companyField("Company Website", "website")}<label className="text-sm font-semibold text-gray-700 md:col-span-2">Company Description<textarea value={company.description || ""} onChange={e => setCompany({ ...company, description: e.target.value })} placeholder="Information not provided" className="mt-2 min-h-28 w-full rounded-xl border border-[#E7E0D5] p-3 font-normal outline-none focus:border-[#9C8055]" /></label>{companyField("Address line 1", "address_line1")}{companyField("Address line 2", "address_line2")}{companyField("City", "city")}{companyField("State / Region", "state")}{companyField("Country", "country")}{companyField("Postal code", "postal_code")}</div></section>
+    <section className="rounded-2xl border border-[#E4DAC3] bg-white p-6 shadow-sm"><h2 className="text-xl font-bold text-gray-900">Company Knowledge</h2><p className="mt-1 text-sm text-gray-500">The AI analyzes these saved sections but does not rewrite them.</p><div className="mt-5 grid gap-4 md:grid-cols-2">{knowledgeField("Company Knowledge", "company_knowledge")}{knowledgeField("HR Policies", "hr_policies")}{knowledgeField("FAQs", "faqs")}{knowledgeField("Important Company Information", "important_information")}{knowledgeField("Employee-related Information", "employee_information")}{knowledgeField("Working Hours", "working_hours")}{knowledgeField("Leave Information", "leave_information")}</div></section>
+    <section className="rounded-2xl border border-[#E4DAC3] bg-white p-6 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-bold text-gray-900">AI Knowledge Status</h2><p className="mt-1 text-sm text-gray-500">Based only on saved, company-scoped data.</p></div><button onClick={() => void analyze()} disabled={analyzing} className="inline-flex items-center gap-2 rounded-xl border border-[#CDBD9F] px-4 py-2.5 font-semibold text-[#765F3D] disabled:opacity-50"><RefreshCw size={16} className={analyzing ? "animate-spin" : ""} />{analyzing ? "Updating..." : "Analyze Company Data"}</button></div>{analysis && <div className="mt-5 grid gap-6 lg:grid-cols-2"><div><div className="flex items-center gap-2 font-bold text-gray-900">{analysis.status === "ready" ? <CheckCircle2 className="text-emerald-600" size={20} /> : <AlertTriangle className="text-amber-600" size={20} />}{analysis.status === "ready" ? "Ready" : "Some information needs attention"}</div><p className="mt-2 text-sm text-gray-500">{analysis.last_analyzed_at ? `Last analyzed: ${new Date(analysis.last_analyzed_at).toLocaleString()}` : "Not analyzed yet"}</p><div className="mt-5 flex justify-between text-sm font-semibold"><span>AI Knowledge Completeness</span><span>{analysis.completeness}%</span></div><div className="mt-2 h-2 rounded-full bg-[#EDE7DB]"><div className="h-2 rounded-full bg-[#9C8055]" style={{ width: `${analysis.completeness}%` }} /></div></div><div className="grid grid-cols-2 gap-3 text-sm">{Object.entries(analysis.sections).map(([key, ready]) => <div key={key} className="flex items-center gap-2 rounded-xl bg-[#FAF8F3] p-3"><span className={ready ? "text-emerald-600" : "text-amber-600"}>{ready ? <Check size={16} /> : "!"}</span>{key.replaceAll("_", " ")}</div>)}</div></div>}</section>
+    {analysis && <section className="rounded-2xl border border-[#E4DAC3] bg-white p-6 shadow-sm"><h2 className="text-xl font-bold text-gray-900">AI Understanding</h2><div className="mt-4 grid gap-3 sm:grid-cols-5">{Object.entries({ Employees: analysis.counts.employees, Departments: analysis.counts.departments, Policies: analysis.counts.policies, FAQs: analysis.counts.faqs, Documents: analysis.counts.documents }).map(([label, value]) => <div key={label} className="rounded-xl bg-[#FAF8F3] p-4"><p className="text-xs uppercase tracking-wide text-gray-500">{label}</p><p className="mt-1 text-2xl font-bold text-gray-900">{value}</p></div>)}</div><p className="mt-5 rounded-xl bg-[#F1E9D9] p-4 text-sm leading-6 text-gray-700">{analysis.summary}</p>{analysis.recommendations.map(item => <p key={item} className="mt-3 text-sm text-amber-700">{item}</p>)}</section>}
+    <section className="rounded-2xl border border-[#E4DAC3] bg-white p-6 shadow-sm"><div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="text-xl font-bold text-gray-900">AI / Retell Configuration</h2><p className="mt-1 text-sm text-gray-500">Phone-specific settings remain connected to this company&apos;s latest saved knowledge.</p></div>{selected && <span className="inline-flex items-center gap-2 rounded-xl bg-[#8B7355] px-3 py-2 text-sm font-semibold text-white"><Phone size={15} />{selected.phone_number}</span>}</div>{numbers.length === 0 ? <p className="mt-5 rounded-xl bg-[#F7F3EB] p-4 text-sm text-gray-500">No phone numbers have been assigned to your company yet.</p> : <div className="mt-5 grid gap-4 md:grid-cols-2"><label className="text-sm font-semibold text-gray-700">Phone number<select value={selectedId} onChange={e => navigate(`/company-data/${e.target.value}`)} className="mt-2 w-full rounded-xl border border-[#E7E0D5] bg-white p-3 font-normal">{numbers.map(item => <option key={item.id} value={item.id}>{item.phone_number}</option>)}</select></label><label className="text-sm font-semibold text-gray-700">Retell agent<select value={numberData.retell_agent_id} onChange={e => setNumberData({ ...numberData, retell_agent_id: e.target.value })} className="mt-2 w-full rounded-xl border border-[#E7E0D5] bg-white p-3 font-normal"><option value="">Select a Retell agent</option>{models.map(model => <option key={model.agent_id} value={model.agent_id}>{model.agent_name}</option>)}</select></label><label className="text-sm font-semibold text-gray-700 md:col-span-2">Phone description<textarea value={numberData.description} onChange={e => setNumberData({ ...numberData, description: e.target.value })} className="mt-2 min-h-24 w-full rounded-xl border border-[#E7E0D5] p-3 font-normal" /></label><label className="text-sm font-semibold text-gray-700 md:col-span-2">Additional instructions<textarea value={numberData.additional_instructions} onChange={e => setNumberData({ ...numberData, additional_instructions: e.target.value })} className="mt-2 min-h-24 w-full rounded-xl border border-[#E7E0D5] p-3 font-normal" /></label><div className="flex gap-3 md:col-span-2"><button onClick={() => void saveNumber()} disabled={savingNumber} className="inline-flex items-center gap-2 rounded-xl bg-[#8B7355] px-5 py-3 font-semibold text-white disabled:opacity-50"><Save size={17} />{savingNumber ? "Saving..." : "Save phone configuration"}</button><button onClick={() => void startCall()} disabled={callLoading || !models.length} className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-5 py-3 font-semibold text-white disabled:opacity-50"><PhoneCall size={17} />{callLoading ? "Connecting..." : "Start live demo call"}</button></div></div>}</section>
+  </div><ActiveCallModal isOpen={callOpen} isConnected={callConnected} onClose={() => { sdk.stopCall(); setCallOpen(false); }} isMuted={muted} onToggleMute={() => { const next = !muted; (sdk as any).room?.localParticipant?.setMicrophoneEnabled(!next); setMuted(next); }} agentName={agentName} /></main>;
 }
