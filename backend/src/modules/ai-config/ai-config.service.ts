@@ -114,6 +114,8 @@ export class AIConfigService {
     }
 
     const knowledgeCenter = company.knowledge_center || {};
+    const phoneNumberKnowledge = profile?.knowledge_text || '';
+    const phoneNumberPdfKnowledge = (profile?.knowledge_file_text || '').slice(0, 100000);
     const policyContext = policies.map((item: any) => `${item.title || item.name || 'Policy'}: ${item.description || item.content_text || ''}`).join('\n');
     const faqContext = faqs.map((item: any) => `Q: ${item.question}\nA: ${item.answer}`).join('\n');
     const documentContext = documents.map((item: any) => `${item.title || 'Document'}: ${item.description || item.content_text || ''}`).join('\n');
@@ -134,7 +136,8 @@ export class AIConfigService {
       `Company documents: ${documentContext || 'Information not provided'}`,
       profile ? `Phone number: ${profile.display_name || 'Unnamed number profile'}` : '',
       profile?.description || '',
-      profile?.knowledge_text || '',
+      phoneNumberKnowledge,
+      phoneNumberPdfKnowledge ? `Phone number PDF knowledge:\n${phoneNumberPdfKnowledge}` : '',
       profile?.additional_instructions ? `Additional instructions: ${profile.additional_instructions}` : '',
     ].filter(Boolean).join('\n\n').slice(0, 100000);
 
@@ -148,6 +151,8 @@ export class AIConfigService {
       company_website: company.website || cfg?.dynamic_variables?.company_website || '',
       company_address: buildAddress(company),
       company_knowledge: knowledgeContext,
+      phone_number_knowledge: phoneNumberKnowledge,
+      phone_number_pdf_knowledge: phoneNumberPdfKnowledge,
       number_display_name: profile?.display_name || '',
       number_description: profile?.description || '',
       additional_instructions: profile?.additional_instructions || '',
@@ -179,6 +184,8 @@ export class AIConfigService {
       numberProfileFound: Boolean(profile),
       companyKnowledgeFound: Boolean(knowledgeContext.trim()),
       companyKnowledgeLength: knowledgeContext.length,
+      phoneNumberKnowledgeFound: Boolean(phoneNumberKnowledge.trim()),
+      phoneNumberPdfKnowledgeFound: Boolean(phoneNumberPdfKnowledge.trim()),
       documentsCount: documents.length,
       policiesCount: policies.length,
       faqsCount: faqs.length,

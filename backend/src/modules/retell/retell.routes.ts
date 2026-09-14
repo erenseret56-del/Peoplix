@@ -107,6 +107,8 @@ export async function retellRoutes(fastify: FastifyInstance) {
       phoneNumber: assignment.phone_number || destinationNumber,
     });
     const inboundKnowledge = resolvedConfig.dynamic_variables.company_knowledge || '';
+    const phoneNumberKnowledge = resolvedConfig.dynamic_variables.phone_number_knowledge || '';
+    const phoneNumberPdfKnowledge = resolvedConfig.dynamic_variables.phone_number_pdf_knowledge || '';
 
     logger.info({
       callId: inbound.call_id || null,
@@ -118,6 +120,8 @@ export async function retellRoutes(fastify: FastifyInstance) {
       numberProfileFound: resolvedConfig.number_profile_found,
       companyKnowledgeFound: Boolean(inboundKnowledge.trim()),
       companyKnowledgeLength: inboundKnowledge.length,
+      phoneNumberKnowledgeFound: Boolean(phoneNumberKnowledge.trim()),
+      phoneNumberPdfKnowledgeFound: Boolean(phoneNumberPdfKnowledge.trim()),
       additionalInstructionsFound: Boolean(resolvedConfig.dynamic_variables.additional_instructions),
       dynamicVariableKeys: Object.keys(resolvedConfig.dynamic_variables),
     }, 'Inbound call context resolved');

@@ -28,6 +28,8 @@ export interface RetellDynamicVariables {
   number_description?: string;
   additional_instructions?: string;
   company_knowledge?: string;
+  phone_number_knowledge?: string;
+  phone_number_pdf_knowledge?: string;
   business_hours_text?: string;
   receptionist_name?: string;     // caller-facing identity, fixed app value
   greeting_name?: string;         // e.g. "Ava"
