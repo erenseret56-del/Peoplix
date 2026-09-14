@@ -3,6 +3,25 @@ import type { Document } from 'mongodb';
 import { getCollection, Collections } from '../../infrastructure/database/index.js';
 import { CompanyStatus } from '../../types/index.js';
 
+export interface CompanyKnowledgeCenter {
+  company_knowledge?: string;
+  faqs?: string;
+  hr_policies?: string;
+  important_information?: string;
+  employee_information?: string;
+  working_hours?: string;
+  leave_information?: string;
+}
+
+export interface AIKnowledgeAnalysis {
+  status: 'ready' | 'attention';
+  last_analyzed_at: Date;
+  completeness: number;
+  sections: Record<string, boolean>;
+  summary: string;
+  recommendations: string[];
+}
+
 export interface CompanyDocument extends Document {
   _id?: ObjectId;
   name: string;
@@ -17,6 +36,8 @@ export interface CompanyDocument extends Document {
   state?: string;
   country?: string;
   postal_code?: string;
+  knowledge_center?: CompanyKnowledgeCenter;
+  ai_knowledge?: AIKnowledgeAnalysis;
   settings: Record<string, any>;
   timezone: string;
   status: CompanyStatus;
