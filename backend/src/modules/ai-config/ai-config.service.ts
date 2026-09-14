@@ -64,9 +64,14 @@ export class AIConfigService {
     const companyIdFilter = ObjectId.isValid(companyId)
       ? { $in: [companyId, new ObjectId(companyId)] }
       : companyId;
-    const [cfg, company] = await Promise.all([
+    const [cfg, company, policies, faqs, documents, employees, departments] = await Promise.all([
       aiConfigRepository.findByCompanyId(companyId),
       companiesRepository.findById(companyId),
+      getCollection(Collections.POLICIES).find({ company_id: companyIdFilter, status: 'active' }, { projection: { title: 1, name: 1, description: 1, content_text: 1 } }).limit(50).toArray(),
+      getCollection(Collections.FAQS).find({ company_id: companyIdFilter, status: 'active' }, { projection: { question: 1, answer: 1, category: 1 } }).limit(100).toArray(),
+      getCollection(Collections.DOCUMENTS).find({ company_id: companyIdFilter, status: 'active' }, { projection: { title: 1, description: 1, content_text: 1 } }).limit(25).toArray(),
+      getCollection(Collections.EMPLOYEES).find({ company_id: companyIdFilter, status: 'active' }, { projection: { first_name: 1, last_name: 1, employee_number: 1, department_id: 1, designation_id: 1 } }).limit(250).toArray(),
+      getCollection(Collections.DEPARTMENTS).find({ company_id: companyIdFilter, status: 'active' }, { projection: { name: 1, description: 1 } }).limit(100).toArray(),
     ]);
 
     if (!company) throw new NotFoundError('Company not found');
@@ -98,17 +103,35 @@ export class AIConfigService {
       });
     }
 
-    const agentId = cfg?.retell_agent_id || config.retell.agentId || '';
+    // A phone profile may select the agent for that assigned number. The
+    // profile is loaded only after the assignment has been verified against
+    // this company, so it cannot become a cross-tenant lookup.
+    const agentId = profile?.retell_agent_id || cfg?.retell_agent_id || config.retell.agentId || '';
     const llmId = config.retell.llmId;
 
     if (!agentId) {
       throw new NotFoundError('No Retell agent configured for this company');
     }
 
+    const knowledgeCenter = company.knowledge_center || {};
+    const policyContext = policies.map((item: any) => `${item.title || item.name || 'Policy'}: ${item.description || item.content_text || ''}`).join('\n');
+    const faqContext = faqs.map((item: any) => `Q: ${item.question}\nA: ${item.answer}`).join('\n');
+    const documentContext = documents.map((item: any) => `${item.title || 'Document'}: ${item.description || item.content_text || ''}`).join('\n');
+    const employeeContext = employees.map((item: any) => `${item.first_name || ''} ${item.last_name || ''} (${item.employee_number || 'no employee number'})`).join(', ');
+    const departmentContext = departments.map((item: any) => `${item.name}: ${item.description || ''}`).join('\n');
     const knowledgeContext = [
       'Use only the saved company and phone information below to answer questions. If the answer is not present, say that the information is not available.',
       `Company: ${company.name}`,
       company.description || '',
+      `Company knowledge: ${knowledgeCenter.company_knowledge || 'Information not provided'}`,
+      `HR policies: ${knowledgeCenter.hr_policies || 'Information not provided'}\n${policyContext}`,
+      `FAQs: ${knowledgeCenter.faqs || 'Information not provided'}\n${faqContext}`,
+      `Important information: ${knowledgeCenter.important_information || 'Information not provided'}`,
+      `Employee information: ${knowledgeCenter.employee_information || 'Information not provided'}\nEmployees: ${employeeContext || 'Information not provided'}`,
+      `Departments: ${departmentContext || 'Information not provided'}`,
+      `Working hours: ${knowledgeCenter.working_hours || 'Information not provided'}`,
+      `Leave information: ${knowledgeCenter.leave_information || 'Information not provided'}`,
+      `Company documents: ${documentContext || 'Information not provided'}`,
       profile ? `Phone number: ${profile.display_name || 'Unnamed number profile'}` : '',
       profile?.description || '',
       profile?.knowledge_text || '',
@@ -128,6 +151,7 @@ export class AIConfigService {
       number_display_name: profile?.display_name || '',
       number_description: profile?.description || '',
       additional_instructions: profile?.additional_instructions || '',
+      ai_instructions: cfg?.ai_instructions || '',
       receptionist_name: config.app.receptionistName,
       greeting_name: config.app.receptionistName,
     };
@@ -155,7 +179,10 @@ export class AIConfigService {
       numberProfileFound: Boolean(profile),
       companyKnowledgeFound: Boolean(knowledgeContext.trim()),
       companyKnowledgeLength: knowledgeContext.length,
-      documentsCount: 0,
+      documentsCount: documents.length,
+      policiesCount: policies.length,
+      faqsCount: faqs.length,
+      employeesCount: employees.length,
       dynamicVariableKeys: Object.keys(dynamicVars),
     }, 'Resolved canonical call context');
 
