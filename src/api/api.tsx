@@ -70,8 +70,39 @@ export const getMyCompanyProfile = async () => {
   return response.data;
 };
 
-export const updateMyCompanyProfile = async (data: { description?: string }) => {
+export const updateMyCompanyProfile = async (data: {
+  name: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  description?: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+  knowledge_center?: {
+    company_knowledge?: string;
+    faqs?: string;
+    hr_policies?: string;
+    important_information?: string;
+    employee_information?: string;
+    working_hours?: string;
+    leave_information?: string;
+  };
+}) => {
   const response = await axiosInstance.patch("/api/companies/my/profile", data);
+  return response.data;
+};
+
+export const getMyAIKnowledge = async () => {
+  const response = await cachedGet("/api/ai-config/my/knowledge");
+  return response.data;
+};
+
+export const analyzeMyAIKnowledge = async () => {
+  const response = await axiosInstance.post("/api/ai-config/my/knowledge/analyze");
   return response.data;
 };
 
