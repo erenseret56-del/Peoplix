@@ -4,6 +4,7 @@ import { aiConfigService } from './ai-config.service.js';
 import { authenticateJWT, requireSuperAdmin, requireAdmin } from '../../middleware/auth.js';
 import { resolveTenant, getTenantId } from '../../middleware/tenant.js';
 import { ValidationError } from '../../middleware/errorHandler.js';
+import { aiKnowledgeService } from './ai-knowledge.service.js';
 
 // ── SCHEMAS ──────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,16 @@ export async function aiConfigRoutes(fastify: FastifyInstance) {
       return reply.send({ success: true, data: result });
     }
   );
+
+  fastify.get('/my/knowledge', { preHandler: [authenticateJWT, resolveTenant, requireAdmin] }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    return reply.send({ success: true, data: await aiKnowledgeService.get(tenantId) });
+  });
+
+  fastify.post('/my/knowledge/analyze', { preHandler: [authenticateJWT, resolveTenant, requireAdmin] }, async (request, reply) => {
+    const tenantId = getTenantId(request);
+    return reply.send({ success: true, data: await aiKnowledgeService.analyze(tenantId), message: 'Company data analyzed' });
+  });
 
   // ──────────────────────────────────────────────────────────────────────────
   // SUPER ADMIN ROUTES — manage any company's AI config
