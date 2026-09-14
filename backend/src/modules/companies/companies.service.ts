@@ -166,9 +166,13 @@ export class CompaniesService {
     if (!updated) throw new NotFoundError('Company not found');
 
     await invalidateTenantCache(id);
-    await aiKnowledgeService.analyze(id);
+    // Persistence is the critical path. Analysis runs from the saved record
+    // without delaying or failing the client's save response.
+    void aiKnowledgeService.analyze(id).catch((error) => {
+      logger.error({ err: error, companyId: id }, 'Automatic company knowledge analysis failed');
+    });
     logger.info({ companyId: id }, 'Company updated');
-    return { id: updated._id!.toString(), name: updated.name, slug: updated.slug, status: updated.status, updated_at: updated.updated_at };
+    return this.getById(id);
   }
 
   async delete(id: string): Promise<void> {

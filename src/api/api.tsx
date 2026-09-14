@@ -66,7 +66,7 @@ export const assignRetellModelToNumber = async (assignmentId: string, retellAgen
 };
 
 export const getMyCompanyProfile = async () => {
-  const response = await cachedGet("/api/companies/my/profile");
+  const response = await axiosInstance.get("/api/companies/my/profile");
   return response.data;
 };
 
@@ -97,7 +97,7 @@ export const updateMyCompanyProfile = async (data: {
 };
 
 export const getMyAIKnowledge = async () => {
-  const response = await cachedGet("/api/ai-config/my/knowledge");
+  const response = await axiosInstance.get("/api/ai-config/my/knowledge");
   return response.data;
 };
 
