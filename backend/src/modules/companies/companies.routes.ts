@@ -8,11 +8,26 @@ import { CompanyStatus } from '../../types/index.js';
 
 const createCompanySchema = z.object({
   name: z.string().min(2).max(255),
-  email: z.string().email().optional(),
+  email: z.string().email().or(z.literal('')).optional(),
   phone: z.string().max(50).optional(),
-  website: z.string().url().optional(),
+  website: z.string().url().or(z.literal('')).optional(),
   timezone: z.string().max(50).optional(),
   description: z.string().max(10000).optional(),
+  address_line1: z.string().max(255).optional(),
+  address_line2: z.string().max(255).optional(),
+  city: z.string().max(100).optional(),
+  state: z.string().max(100).optional(),
+  country: z.string().max(100).optional(),
+  postal_code: z.string().max(30).optional(),
+  knowledge_center: z.object({
+    company_knowledge: z.string().max(100000).optional(),
+    faqs: z.string().max(100000).optional(),
+    hr_policies: z.string().max(100000).optional(),
+    important_information: z.string().max(100000).optional(),
+    employee_information: z.string().max(100000).optional(),
+    working_hours: z.string().max(20000).optional(),
+    leave_information: z.string().max(20000).optional(),
+  }).optional(),
   adminEmail: z.string().email().optional(),
   adminPassword: z.string().min(8).optional(),
 });
