@@ -4,6 +4,7 @@ import { employeesRepository } from '../employees/employees.repository.js';
 import { departmentsRepository } from '../departments/departments.repository.js';
 import { logger } from '../../config/logger.js';
 import { cache } from '../../infrastructure/cache/memory-cache.js';
+import { retellClient } from './retell.client.js';
 
 interface SearchResult {
   found: boolean;
@@ -96,6 +97,22 @@ export class RetellService {
       await cache.set(cacheKey, String(callLog.company_id), 600);
       return String(callLog.company_id);
     }
+
+    // Retell can invoke a function before the call-started webhook has been
+    // persisted. Resolve through the call's destination number as a race-safe
+    // fallback; the phone assignment remains the tenant authority.
+    try {
+      const call = await retellClient.getCall(callId);
+      const companyId = await this.resolveCompanyFromPhone(call.to_number);
+      if (companyId) {
+        await cache.set(cacheKey, companyId, 600);
+        logger.info({ callId, companyId, phoneNumber: call.to_number }, 'Resolved call tenant from Retell call record');
+        return companyId;
+      }
+    } catch (error) {
+      logger.warn({ err: error, callId }, 'Could not resolve call tenant from Retell call record');
+    }
+
     return null;
   }
 
@@ -121,7 +138,14 @@ export class RetellService {
     if (!normalized) return null;
 
     const assignment = await getCollection(Collections.PHONE_ASSIGNMENTS).findOne(
-      { normalized_phone_number: { $in: phoneNumberVariants(normalized) }, status: 'assigned' },
+      {
+        status: 'assigned',
+        $or: [
+          { normalized_phone_number: { $in: phoneNumberVariants(normalized) } },
+          { phone_number: { $in: phoneNumberVariants(normalized) } },
+          { phone_number: `+${normalized}` },
+        ],
+      },
       { projection: { _id: 1, company_id: 1, phone_number: 1 } },
     );
 
