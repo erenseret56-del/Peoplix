@@ -1,4 +1,5 @@
 import { companiesRepository } from './companies.repository.js';
+import type { CompanyDocument } from './companies.repository.js';
 import { authRepository } from '../auth/auth.repository.js';
 import { authService } from '../auth/auth.service.js';
 import { invalidateTenantCache } from '../../middleware/tenant.js';
@@ -12,6 +13,7 @@ import { AI_CONFIG_COLLECTION } from '../ai-config/ai-config.types.js';
 import { ClientSession, ObjectId } from 'mongodb';
 import { getMongoClient } from '../../infrastructure/database/index.js';
 import { retellClient } from '../retell/retell.client.js';
+import { aiKnowledgeService } from '../ai-config/ai-knowledge.service.js';
 
 function generateSlug(name: string): string {
   return name
@@ -84,6 +86,8 @@ export class CompaniesService {
       address_line1: company.address_line1, address_line2: company.address_line2,
       city: company.city, state: company.state, country: company.country,
       postal_code: company.postal_code, settings: company.settings,
+      knowledge_center: company.knowledge_center || {},
+      ai_knowledge: company.ai_knowledge || null,
       timezone: company.timezone, status: company.status,
       subscription_tier: company.subscription_tier,
       billing_due_amount: company.billing_due_amount || 0,
@@ -144,6 +148,7 @@ export class CompaniesService {
     description?: string;
     address_line1?: string; address_line2?: string; city?: string; state?: string;
     country?: string; postal_code?: string; settings?: Record<string, any>;
+    knowledge_center?: CompanyDocument['knowledge_center'];
     status?: CompanyStatus; subscription_tier?: string;
   }) {
     const existing = await companiesRepository.findById(id);
@@ -161,6 +166,7 @@ export class CompaniesService {
     if (!updated) throw new NotFoundError('Company not found');
 
     await invalidateTenantCache(id);
+    await aiKnowledgeService.analyze(id);
     logger.info({ companyId: id }, 'Company updated');
     return { id: updated._id!.toString(), name: updated.name, slug: updated.slug, status: updated.status, updated_at: updated.updated_at };
   }
