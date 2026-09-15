@@ -12,6 +12,7 @@ import { getCollection, Collections, ObjectId } from '../../infrastructure/datab
 import { companiesRepository } from '../companies/companies.repository.js';
 import { addNumberToSipTrunk } from '../phone-numbers/phone-numbers.service.js';
 import { config } from '../../config/env.js';
+import { describeRetellPayload, extractRetellInboundCall, RetellInboundPayload } from './retell.inbound.js';
 
 // ── WEBHOOK AUTH MIDDLEWARE ───────────────────────────────────────────────────
 async function requireRetellWebhook(request: FastifyRequest, reply: FastifyReply) {
@@ -88,15 +89,22 @@ export async function retellRoutes(fastify: FastifyInstance) {
   });
 
   fastify.post('/inbound-call', { preHandler: [requireRetellWebhook] }, async (request, reply) => {
-    const body = request.body as any;
-    const inbound = body.call_inbound || {};
-    const destinationNumber = inbound.to_number || inbound.destination_number;
-    const assignment = await retellService.resolvePhoneAssignmentForNumber(destinationNumber);
+    const body = request.body as RetellInboundPayload;
+    const { callId, fromNumber, destinationNumber } = extractRetellInboundCall(body);
+    if (!callId || !destinationNumber) {
+      logger.warn({
+        callId,
+        destinationNumber,
+        fromNumber,
+        payloadPaths: describeRetellPayload(body),
+      }, 'Retell inbound payload is missing call identity or destination number');
+    }
+    const assignment = await retellService.resolvePhoneAssignmentForNumber(destinationNumber || undefined);
 
     if (!assignment) {
       logger.warn({
-        callId: inbound.call_id || null,
-        destinationNumber: destinationNumber || null,
+        callId,
+        destinationNumber,
         reason: 'NO_COMPANY_FOR_PHONE',
       }, 'Inbound call rejected: no company assignment for destination number');
       return reply.send({ call_inbound: { reject: true, reason: 'NO_COMPANY_FOR_PHONE' } });
@@ -104,10 +112,10 @@ export async function retellRoutes(fastify: FastifyInstance) {
 
     const resolvedConfig = await aiConfigService.buildCompanyCallContext(assignment.company_id, {
       phoneAssignmentId: assignment.phone_assignment_id,
-      phoneNumber: assignment.phone_number || destinationNumber,
+      phoneNumber: assignment.phone_number || destinationNumber || undefined,
     });
-    if (inbound.call_id) {
-      await retellService.cacheInboundCallContext(inbound.call_id, {
+    if (callId) {
+      await retellService.cacheInboundCallContext(callId, {
         companyId: assignment.company_id,
         phoneAssignmentId: assignment.phone_assignment_id,
       });
@@ -117,7 +125,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
     const phoneNumberPdfKnowledge = resolvedConfig.dynamic_variables.phone_number_pdf_knowledge || '';
 
     logger.info({
-      callId: inbound.call_id || null,
+      callId,
       destinationNumber: assignment.phone_number || destinationNumber,
       phoneAssignmentId: assignment.phone_assignment_id,
       companyId: assignment.company_id,
