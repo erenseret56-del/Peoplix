@@ -6,6 +6,10 @@ import { logger } from '../../config/logger.js';
 import { config } from '../../config/env.js';
 import { getCollection, Collections } from '../../infrastructure/database/index.js';
 import { ObjectId } from 'mongodb';
+import { retellClient } from '../retell/retell.client.js';
+
+const MAX_RETELL_KNOWLEDGE_LENGTH = 100000;
+const MAX_RETELL_PHONE_KNOWLEDGE_LENGTH = 50000;
 
 /**
  * AI Config Service
@@ -113,9 +117,14 @@ export class AIConfigService {
       throw new NotFoundError('No Retell agent configured for this company');
     }
 
+    const agent = await retellClient.getAgent(agentId);
+    if (!agent?.agent_id || agent.agent_id !== agentId) {
+      throw new NotFoundError('The configured Retell agent could not be found');
+    }
+
     const knowledgeCenter = company.knowledge_center || {};
-    const phoneNumberKnowledge = profile?.knowledge_text || '';
-    const phoneNumberPdfKnowledge = (profile?.knowledge_file_text || '').slice(0, 100000);
+    const phoneNumberKnowledge = toRetellString(profile?.knowledge_text);
+    const phoneNumberPdfKnowledge = limitText(toRetellString(profile?.knowledge_file_text), MAX_RETELL_PHONE_KNOWLEDGE_LENGTH);
     const policyContext = policies.map((item: any) => `${item.title || item.name || 'Policy'}: ${item.description || item.content_text || ''}`).join('\n');
     const faqContext = faqs.map((item: any) => `Q: ${item.question}\nA: ${item.answer}`).join('\n');
     const documentContext = documents.map((item: any) => `${item.title || 'Document'}: ${item.description || item.content_text || ''}`).join('\n');
@@ -125,41 +134,38 @@ export class AIConfigService {
       'Use only the saved company and phone information below to answer questions. If the answer is not present, say that the information is not available.',
       `Company: ${company.name}`,
       company.description || '',
-      `Company knowledge: ${knowledgeCenter.company_knowledge || 'Information not provided'}`,
-      `HR policies: ${knowledgeCenter.hr_policies || 'Information not provided'}\n${policyContext}`,
-      `FAQs: ${knowledgeCenter.faqs || 'Information not provided'}\n${faqContext}`,
-      `Important information: ${knowledgeCenter.important_information || 'Information not provided'}`,
-      `Employee information: ${knowledgeCenter.employee_information || 'Information not provided'}\nEmployees: ${employeeContext || 'Information not provided'}`,
+      `Company knowledge: ${toRetellString(knowledgeCenter.company_knowledge) || 'Information not provided'}`,
+      `HR policies: ${toRetellString(knowledgeCenter.hr_policies) || 'Information not provided'}\n${policyContext}`,
+      `FAQs: ${toRetellString(knowledgeCenter.faqs) || 'Information not provided'}\n${faqContext}`,
+      `Important information: ${toRetellString(knowledgeCenter.important_information) || 'Information not provided'}`,
+      `Employee information: ${toRetellString(knowledgeCenter.employee_information) || 'Information not provided'}\nEmployees: ${employeeContext || 'Information not provided'}`,
       `Departments: ${departmentContext || 'Information not provided'}`,
-      `Working hours: ${knowledgeCenter.working_hours || 'Information not provided'}`,
-      `Leave information: ${knowledgeCenter.leave_information || 'Information not provided'}`,
+      `Working hours: ${toRetellString(knowledgeCenter.working_hours) || 'Information not provided'}`,
+      `Leave information: ${toRetellString(knowledgeCenter.leave_information) || 'Information not provided'}`,
       `Company documents: ${documentContext || 'Information not provided'}`,
-      profile ? `Phone number: ${profile.display_name || 'Unnamed number profile'}` : '',
-      profile?.description || '',
-      phoneNumberKnowledge,
-      phoneNumberPdfKnowledge ? `Phone number PDF knowledge:\n${phoneNumberPdfKnowledge}` : '',
-      profile?.additional_instructions ? `Additional instructions: ${profile.additional_instructions}` : '',
-    ].filter(Boolean).join('\n\n').slice(0, 100000);
+    ].filter(Boolean).join('\n\n');
+
+    const boundedKnowledgeContext = limitText(knowledgeContext, MAX_RETELL_KNOWLEDGE_LENGTH);
 
     const normalizedPhoneNumber = assignment?.phone_number || options.phoneNumber || company.phone || '';
-    const dynamicVars: RetellDynamicVariables = {
+    const dynamicVars: RetellDynamicVariables = normalizeDynamicVariables({
       ...(cfg?.dynamic_variables || {}),
-      company_name: company.name,
-      company_description: company.description || cfg?.dynamic_variables?.company_description || '',
-      company_email: company.email || cfg?.dynamic_variables?.company_email || '',
-      company_phone: normalizedPhoneNumber || cfg?.dynamic_variables?.company_phone || '',
-      company_website: company.website || cfg?.dynamic_variables?.company_website || '',
+      company_name: toRetellString(company.name),
+      company_description: toRetellString(company.description || cfg?.dynamic_variables?.company_description),
+      company_email: toRetellString(company.email || cfg?.dynamic_variables?.company_email),
+      company_phone: toRetellString(normalizedPhoneNumber || cfg?.dynamic_variables?.company_phone),
+      company_website: toRetellString(company.website || cfg?.dynamic_variables?.company_website),
       company_address: buildAddress(company),
-      company_knowledge: knowledgeContext,
+      company_knowledge: boundedKnowledgeContext,
       phone_number_knowledge: phoneNumberKnowledge,
       phone_number_pdf_knowledge: phoneNumberPdfKnowledge,
-      number_display_name: profile?.display_name || '',
-      number_description: profile?.description || '',
-      additional_instructions: profile?.additional_instructions || '',
-      ai_instructions: cfg?.ai_instructions || '',
+      number_display_name: toRetellString(profile?.display_name),
+      number_description: toRetellString(profile?.description),
+      additional_instructions: toRetellString(profile?.additional_instructions),
+      ai_instructions: toRetellString(cfg?.ai_instructions),
       receptionist_name: config.app.receptionistName,
       greeting_name: config.app.receptionistName,
-    };
+    });
 
     // Build resolved welcome message from template using the fixed receptionist identity.
     const welcomeTemplate = cfg?.welcome_message_template
@@ -183,7 +189,7 @@ export class AIConfigService {
       phoneAssignmentId: assignment?._id?.toString() || null,
       numberProfileFound: Boolean(profile),
       companyKnowledgeFound: Boolean(knowledgeContext.trim()),
-      companyKnowledgeLength: knowledgeContext.length,
+      companyKnowledgeLength: boundedKnowledgeContext.length,
       phoneNumberKnowledgeFound: Boolean(phoneNumberKnowledge.trim()),
       phoneNumberPdfKnowledgeFound: Boolean(phoneNumberPdfKnowledge.trim()),
       documentsCount: documents.length,
@@ -314,6 +320,24 @@ function buildAddress(company: any): string {
     company.country,
   ].filter(Boolean);
   return parts.join(', ');
+}
+
+function toRetellString(value: unknown): string {
+  if (typeof value === 'string') return limitText(value, MAX_RETELL_KNOWLEDGE_LENGTH);
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'boolean') return String(value);
+  return '';
+}
+
+function limitText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 32).trimEnd()}\n[Content truncated.]`;
+}
+
+function normalizeDynamicVariables(values: Record<string, unknown>): RetellDynamicVariables {
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [key, toRetellString(value)]),
+  ) as RetellDynamicVariables;
 }
 
 function formatBusinessHours(hours: CompanyAIConfigDocument['business_hours']): string {

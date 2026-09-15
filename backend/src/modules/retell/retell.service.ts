@@ -12,6 +12,11 @@ interface SearchResult {
   data: any;
 }
 
+interface InboundCallContext {
+  companyId: string;
+  phoneAssignmentId: string;
+}
+
 function normalizePhoneNumber(phone?: string): string | null {
   if (!phone) return null;
   const digits = phone.replace(/\D/g, '');
@@ -87,6 +92,12 @@ export class RetellService {
     const cacheKey = `retell:call:${callId}:company`;
     const cached = await cache.get<string>(cacheKey);
     if (cached) return cached;
+
+    const inboundContext = await cache.get<InboundCallContext>(`retell:call:${callId}:context`);
+    if (inboundContext?.companyId) {
+      await cache.set(cacheKey, inboundContext.companyId, 600);
+      return inboundContext.companyId;
+    }
 
     const callLog = await getCollection(Collections.CALL_LOGS).findOne(
       { retell_call_id: callId },
@@ -164,11 +175,19 @@ export class RetellService {
   }
 
   async getPhoneAssignmentForCall(callId: string): Promise<string | null> {
+    const inboundContext = await cache.get<InboundCallContext>(`retell:call:${callId}:context`);
+    if (inboundContext?.phoneAssignmentId) return inboundContext.phoneAssignmentId;
+
     const call = await getCollection(Collections.CALL_LOGS).findOne(
       { retell_call_id: callId },
       { projection: { phone_assignment_id: 1 } },
     );
     return call?.phone_assignment_id ? String(call.phone_assignment_id) : null;
+  }
+
+  async cacheInboundCallContext(callId: string, context: InboundCallContext): Promise<void> {
+    await cache.set(`retell:call:${callId}:context`, context, 3600);
+    await cache.set(`retell:call:${callId}:company`, context.companyId, 3600);
   }
 
   async searchNumberProfile(companyId: string, phoneAssignmentId: string, query: string): Promise<SearchResult> {
@@ -464,6 +483,7 @@ export class RetellService {
     }
 
     await cache.delete(`retell:call:${payload.call_id}:company`);
+    await cache.delete(`retell:call:${payload.call_id}:context`);
     logger.info({ callId: payload.call_id, companyId: updated.company_id, durationSeconds }, 'Call ended logged');
   }
 }

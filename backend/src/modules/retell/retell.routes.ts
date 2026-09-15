@@ -106,6 +106,12 @@ export async function retellRoutes(fastify: FastifyInstance) {
       phoneAssignmentId: assignment.phone_assignment_id,
       phoneNumber: assignment.phone_number || destinationNumber,
     });
+    if (inbound.call_id) {
+      await retellService.cacheInboundCallContext(inbound.call_id, {
+        companyId: assignment.company_id,
+        phoneAssignmentId: assignment.phone_assignment_id,
+      });
+    }
     const inboundKnowledge = resolvedConfig.dynamic_variables.company_knowledge || '';
     const phoneNumberKnowledge = resolvedConfig.dynamic_variables.phone_number_knowledge || '';
     const phoneNumberPdfKnowledge = resolvedConfig.dynamic_variables.phone_number_pdf_knowledge || '';

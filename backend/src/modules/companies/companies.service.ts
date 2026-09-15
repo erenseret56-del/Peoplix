@@ -166,6 +166,7 @@ export class CompaniesService {
     if (!updated) throw new NotFoundError('Company not found');
 
     await invalidateTenantCache(id);
+    await aiConfigRepository.invalidateCache(id);
     // Persistence is the critical path. Analysis runs from the saved record
     // without delaying or failing the client's save response.
     void aiKnowledgeService.analyze(id).catch((error) => {
