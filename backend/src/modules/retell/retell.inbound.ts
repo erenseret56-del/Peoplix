@@ -1,5 +1,11 @@
 export interface RetellInboundPayload {
   event?: string;
+  call?: {
+    call_id?: unknown;
+    from_number?: unknown;
+    to_number?: unknown;
+    agent_id?: unknown;
+  };
   call_inbound?: {
     call_id?: unknown;
     from_number?: unknown;
@@ -24,11 +30,13 @@ function stringValue(value: unknown): string | null {
 }
 
 export function extractRetellInboundCall(payload: RetellInboundPayload): RetellInboundCallFields {
+  const call = payload.call || {};
   const nested = payload.call_inbound || {};
   return {
-    callId: stringValue(nested.call_id) || stringValue(payload.call_id),
-    fromNumber: stringValue(nested.from_number) || stringValue(payload.from_number),
-    destinationNumber: stringValue(nested.to_number)
+    callId: stringValue(call.call_id) || stringValue(nested.call_id) || stringValue(payload.call_id),
+    fromNumber: stringValue(call.from_number) || stringValue(nested.from_number) || stringValue(payload.from_number),
+    destinationNumber: stringValue(call.to_number)
+      || stringValue(nested.to_number)
       || stringValue(nested.destination_number)
       || stringValue(payload.to_number)
       || stringValue(payload.destination_number),
