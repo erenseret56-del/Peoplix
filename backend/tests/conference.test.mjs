@@ -123,6 +123,54 @@ test('sessions have opaque secrets, fixed server expiry and no customer records'
   assert.match(publicView.headers['cache-control'], /no-store/);
 });
 
+test('normalized email is the usage identity while different emails remain independent', async () => {
+  const email = `One.Use-${randomUUID()}@Example-Corp.Test`;
+  const first = await create(email);
+
+  const otherTab = await app.inject({ method: 'POST', url: '/api/conference/sessions', payload: { email: email.toLowerCase(), consent: true } });
+  assert.equal(otherTab.statusCode, 409);
+  assert.equal(otherTab.json().error.code, 'CONFERENCE_IN_PROGRESS');
+
+  const resumed = await app.inject({ method: 'POST', url: '/api/conference/sessions', headers: auth(first.token), payload: { email: `  ${email.toUpperCase()}  `, consent: true } });
+  assert.equal(resumed.statusCode, 201, resumed.body);
+  assert.equal(resumed.json().data.sessionId, first.sessionId);
+  assert.equal(resumed.json().data.token, first.token);
+
+  const differentEmail = await create();
+  assert.notEqual(differentEmail.sessionId, first.sessionId);
+
+  const started = await start(first);
+  const provider = providerCalls.get(started.callId);
+  await webhook('call_started', { ...provider, call_status: 'ongoing', start_timestamp: Date.now() - 1000 });
+  await webhook('call_ended', { ...provider, call_status: 'ended', start_timestamp: Date.now() - 1000, end_timestamp: Date.now(), duration_ms: 1000 });
+
+  for (const usedEmail of [email.toLowerCase(), `  ${email.toUpperCase()}  `]) {
+    const used = await app.inject({ method: 'POST', url: '/api/conference/sessions', payload: { email: usedEmail, consent: true } });
+    assert.equal(used.statusCode, 409, used.body);
+    assert.equal(used.json().error.code, 'CONFERENCE_ALREADY_USED');
+  }
+});
+
+test('email entry alone is not permanent usage and an expired untouched reservation can restart', async () => {
+  const email = `not-started-${randomUUID()}@example-corp.test`;
+  const first = await create(email);
+  await service.conferences().updateOne({ sessionId: first.sessionId }, { $set: { status: 'expired', expiresAt: new Date(Date.now() - 1), updatedAt: new Date() } });
+  const retry = await app.inject({ method: 'POST', url: '/api/conference/sessions', payload: { email, consent: true } });
+  assert.equal(retry.statusCode, 201, retry.body);
+  assert.notEqual(retry.json().data.sessionId, first.sessionId);
+  assert.equal(await service.conferences().countDocuments({ email }), 1);
+});
+
+test('simultaneous first-use submissions reserve exactly one session per email', async () => {
+  const email = `race-${randomUUID()}@example-corp.test`;
+  const responses = await Promise.all(Array.from({ length: 20 }, () => app.inject({
+    method: 'POST', url: '/api/conference/sessions', payload: { email, consent: true },
+  })));
+  assert.equal(responses.filter(response => response.statusCode === 201).length, 1);
+  assert.equal(responses.filter(response => response.statusCode === 409).length, 19);
+  assert.equal(await service.conferences().countDocuments({ email }), 1);
+});
+
 test('admin list, details and recordings reject missing, visitor and company credentials', async () => {
   const session = await create();
   for (const suffix of ['/activity', `/activity/${session.sessionId}`, `/activity/${session.sessionId}/recording/call_test`]) {

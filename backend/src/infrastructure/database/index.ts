@@ -145,6 +145,9 @@ export async function createIndexes(): Promise<void> {
     await database.collection(Collections.CONFERENCE).createIndexes([
       { key: { sessionId: 1 }, unique: true },
       { key: { tokenHash: 1 }, unique: true },
+      // New conference admissions reserve one record per normalized email.
+      // Sparse keeps legacy records indexable without a destructive migration.
+      { key: { emailKey: 1 }, unique: true, sparse: true },
       { key: { email: 1 } },
       { key: { companyDomain: 1 } },
       { key: { callId: 1 }, unique: true, sparse: true },
@@ -317,7 +320,7 @@ export async function createIndexes(): Promise<void> {
 export function toObjectId(id: string): ObjectId {
   try {
     return new ObjectId(id);
-  } catch (error) {
+  } catch {
     throw new Error(`Invalid ObjectId: ${id}`);
   }
 }

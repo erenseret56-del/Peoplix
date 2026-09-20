@@ -40,14 +40,17 @@ export default function ConferencePage() {
   const endedByUser = useRef(false);
   const activeToken = useRef(token);
   const restoreToken = useRef(token);
+  const forgetToken = useCallback(() => {
+    saveToken(''); activeToken.current = ''; restoreToken.current = ''; setToken('');
+  }, []);
   const ava = useAvaDemoCall({
     onStarted: () => { if (!endedByUser.current) { setStage('live'); setBusy(false); busyRef.current = false; } },
     onEnded: () => {
       if (endedByUser.current) return;
       setStage('complete'); setTalking(false); setBusy(false); busyRef.current = false;
-      if (activeToken.current) void conferenceRequest<ConferenceSession>('/session', activeToken.current).then(data => {
-        if (!endedByUser.current && data.status !== 'active') applySession(data);
-      }).catch(() => undefined);
+      const completedToken = activeToken.current;
+      if (completedToken) void conferenceRequest('/end', completedToken, {}).catch(() => undefined);
+      forgetToken();
     },
     onError: () => {
       if (endedByUser.current) return;
@@ -67,7 +70,8 @@ export default function ConferencePage() {
     setSession(data); setClockOffset(new Date(data.serverNow).getTime() - Date.now());
     setStage(data.status === 'expired' ? 'expired' : data.status === 'completed' ? 'complete'
       : data.status === 'active' ? 'interrupted' : data.status === 'failed' && !data.canRetry ? 'complete' : 'ready');
-  }, []);
+    if (data.status === 'completed' || data.status === 'expired') forgetToken();
+  }, [forgetToken]);
 
   useEffect(() => {
     const previousTitle = document.title;
@@ -78,14 +82,23 @@ export default function ConferencePage() {
   useEffect(() => {
     if (!restoreToken.current) return;
     let cancelled = false;
-    void conferenceRequest<ConferenceSession>('/session', restoreToken.current).then(data => { if (!cancelled) applySession(data); }).catch(err => {
+    void conferenceRequest<ConferenceSession>('/session', restoreToken.current).then(data => {
+      if (cancelled) return;
+      // Only an active call restores automatically. Pending sessions return to
+      // email entry; their tab token can resume after the same email is checked.
+      if (data.status === 'active') applySession(data);
+      else {
+        setSession(null); setStage('email');
+        if (data.status === 'completed' || data.status === 'expired') forgetToken();
+      }
+    }).catch(err => {
       if (cancelled) return;
       if (err instanceof ConferenceError && ['SESSION_EXPIRED', 'INVALID_SESSION'].includes(err.code)) {
-        setStage(err.code === 'SESSION_EXPIRED' ? 'expired' : 'email'); saveToken('');
+        setStage('email'); forgetToken();
       } else { setError(err.message); setStage('interrupted'); }
     });
     return () => { cancelled = true; };
-  }, [applySession]);
+  }, [applySession, forgetToken]);
 
   useEffect(() => {
     const tick = window.setInterval(() => setNow(Date.now()), 250);
@@ -109,8 +122,10 @@ export default function ConferencePage() {
     avaRef.current.stop();
     setTalking(false); setStage(expired ? 'expired' : 'complete');
     setError(''); setBusy(false); busyRef.current = false;
-    if (activeToken.current) void conferenceRequest('/end', activeToken.current, {}).catch(() => undefined);
-  }, []);
+    const completedToken = activeToken.current;
+    if (completedToken) void conferenceRequest('/end', completedToken, {}).catch(() => undefined);
+    forgetToken();
+  }, [forgetToken]);
 
   const sessionRemaining = session ? new Date(session.expiresAt).getTime() - now - clockOffset : 0;
   const callRemaining = session?.conversationEndsAt ? new Date(session.conversationEndsAt).getTime() - now - clockOffset : 180000;
@@ -124,9 +139,13 @@ export default function ConferencePage() {
     event.preventDefault(); if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setError('');
     try {
-      const data = await conferenceRequest<ConferenceSession & { token: string }>('/sessions', undefined, { email, consent });
+      const data = await conferenceRequest<ConferenceSession & { token: string }>('/sessions', activeToken.current || undefined, { email, consent });
       activeToken.current = data.token; saveToken(data.token); setToken(data.token); applySession(data);
-    } catch (err) { setError(err instanceof Error ? err.message : 'Please try again.'); }
+    } catch (err) {
+      if (err instanceof ConferenceError && err.code === 'CONFERENCE_ALREADY_USED') {
+        forgetToken(); setSession(null); setStage('complete'); setError('');
+      } else setError(err instanceof Error ? err.message : 'Please try again.');
+    }
     finally { busyRef.current = false; setBusy(false); }
   }
 

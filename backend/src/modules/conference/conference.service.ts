@@ -10,6 +10,22 @@ import type { Conference, ConferenceCall } from './conference.types.js';
 
 export const conferences = () => getCollection<Conference>(Collections.CONFERENCE);
 const terminalCall = (call?: ConferenceCall) => call?.status === 'ended' || call?.status === 'error';
+const terminalSession = (record: Conference) => record.status === 'completed' || record.status === 'expired';
+const participated = (record: Conference) => record.calls.some(call => Boolean(call.startTime) || (call.durationMs ?? 0) > 0);
+
+function bearerToken(authorization?: string) {
+  return authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
+}
+
+function alreadyUsed(record: Conference, now = Date.now()) {
+  return participated(record) && (terminalSession(record) || record.expiresAt.getTime() <= now);
+}
+
+const alreadyUsedError = () => new AppError(
+  'CONFERENCE_ALREADY_USED',
+  'This email has already completed the PEOPLIX conference experience.',
+  409,
+);
 
 function requireConfigured() {
   // Conference intentionally shares the already-working public Ava path.
@@ -49,26 +65,86 @@ async function consumeLimit(key: string, max: number, windowMs: number) {
   if (!result.modifiedCount) throw new AppError('RATE_LIMITED', 'Please wait a little before trying again.', 429);
 }
 
-export async function createConference(emailInput: unknown, consent: unknown, ip: string) {
+export async function createConference(emailInput: unknown, consent: unknown, ip: string, authorization?: string) {
   const identity = normalizeWorkEmail(emailInput, config.conference.blockedDomains);
   if (consent !== true) throw new AppError('CONSENT_REQUIRED', 'Please agree to the recording notice to continue.', 400);
   requireConfigured();
   await consumeLimit(`ip:${ip}`, config.conference.ipSessionsPerMinute, 60_000);
-  await consumeLimit(`email:${identity.email}`, 3, 60 * 60_000);
-  const token = newSessionToken();
+
+  // Email is the only usage identity. The browser token can resume its own
+  // unfinished reservation, but never decides whether another email may enter.
   const now = new Date();
+  const suppliedToken = bearerToken(authorization);
+  const suppliedHash = suppliedToken ? hashToken(suppliedToken) : undefined;
+  const emailKey = hashToken(`conference-email:${identity.email}`);
+
+  const completed = await conferences().findOne({
+    email: identity.email,
+    $or: [
+      { status: { $in: ['completed', 'expired'] }, 'calls.startTime': { $exists: true } },
+      { status: { $in: ['completed', 'expired'] }, 'calls.durationMs': { $gt: 0 } },
+      { expiresAt: { $lte: now }, 'calls.startTime': { $exists: true } },
+      { expiresAt: { $lte: now }, 'calls.durationMs': { $gt: 0 } },
+    ],
+  });
+  if (completed) throw alreadyUsedError();
+
+  // New records have a unique emailKey. Legacy records are also respected so
+  // an older active session cannot be bypassed during rollout.
+  const reserved = await conferences().findOne({ emailKey })
+    ?? await conferences().findOne({ email: identity.email, status: { $in: ['created', 'active', 'failed'] }, expiresAt: { $gt: now } });
+  if (reserved) {
+    if (alreadyUsed(reserved, now.getTime())) throw alreadyUsedError();
+    if (suppliedHash === reserved.tokenHash && reserved.expiresAt.getTime() > now.getTime() && !terminalSession(reserved)) {
+      return { ...visitorView(reserved), token: suppliedToken! };
+    }
+    const noParticipatingAttempt = reserved.calls.length === 0 || reserved.calls.every(call =>
+      !call.startTime && !(call.durationMs && call.durationMs > 0) && call.status === 'error');
+    const canRecycle = noParticipatingAttempt
+      && (terminalSession(reserved) || reserved.expiresAt.getTime() <= now.getTime());
+    if (!canRecycle) {
+      throw new AppError('CONFERENCE_IN_PROGRESS', 'A conference session for this email is already in progress.', 409);
+    }
+
+    const replacementToken = newSessionToken();
+    const replacement = await conferences().findOneAndUpdate({
+      _id: reserved._id, updatedAt: reserved.updatedAt, tokenHash: reserved.tokenHash,
+    }, {
+      $set: {
+        ...identity, emailKey, sessionId: randomUUID(), tokenHash: hashToken(replacementToken),
+        sessionStart: now, expiresAt: new Date(now.getTime() + SESSION_MS), status: 'created',
+        calls: [], agentId: config.retell.agentId!, consentAt: now, consentVersion: 'conference-v1',
+        createdAt: now, updatedAt: now,
+      },
+      $unset: {
+        sessionEnd: '', sessionDuration: '', callId: '', callStatus: '', conversationEndsAt: '',
+        currentAttemptId: '', nextActionAt: '', leaseUntil: '', leaseOwner: '', stopRequested: '',
+      },
+    }, { returnDocument: 'after' });
+    if (!replacement) throw new AppError('CONFERENCE_IN_PROGRESS', 'A conference session for this email is already in progress.', 409);
+    return { ...visitorView(replacement), token: replacementToken };
+  }
+
+  const token = newSessionToken();
   const record: Conference = {
-    ...identity, sessionId: randomUUID(), tokenHash: hashToken(token),
+    ...identity, emailKey, sessionId: randomUUID(), tokenHash: hashToken(token),
     sessionStart: now, expiresAt: new Date(now.getTime() + SESSION_MS), status: 'created',
     calls: [], agentId: config.retell.agentId!, consentAt: now, consentVersion: 'conference-v1',
     createdAt: now, updatedAt: now,
   };
-  await conferences().insertOne(record);
+  try {
+    await conferences().insertOne(record);
+  } catch (error) {
+    if (!(error && typeof error === 'object' && 'code' in error && error.code === 11000)) throw error;
+    const winner = await conferences().findOne({ emailKey });
+    if (winner && alreadyUsed(winner)) throw alreadyUsedError();
+    throw new AppError('CONFERENCE_IN_PROGRESS', 'A conference session for this email is already in progress.', 409);
+  }
   return { ...visitorView(record), token };
 }
 
 export async function authenticateConference(authorization?: string) {
-  const token = authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
+  const token = bearerToken(authorization);
   if (!token) throw new AppError('INVALID_SESSION', 'Please enter your work email to begin.', 401);
   const record = await conferences().findOne({ tokenHash: hashToken(token) });
   if (!record) throw new AppError('INVALID_SESSION', 'Please enter your work email to begin.', 401);
@@ -137,12 +213,18 @@ export async function startConferenceCall(record: Conference) {
 }
 
 export async function endConference(record: Conference) {
-  await conferences().updateOne({ sessionId: record.sessionId }, {
-    $set: { stopRequested: true, nextActionAt: new Date(), updatedAt: new Date() },
-  });
+  const now = new Date();
+  const updated = await conferences().findOneAndUpdate({ sessionId: record.sessionId }, {
+    $set: {
+      status: record.expiresAt.getTime() <= now.getTime() ? 'expired' : 'completed',
+      sessionEnd: new Date(Math.min(now.getTime(), record.expiresAt.getTime())),
+      sessionDuration: Math.max(0, Math.min(now.getTime(), record.expiresAt.getTime()) - record.sessionStart.getTime()),
+      stopRequested: true, nextActionAt: now, updatedAt: now,
+    },
+  }, { returnDocument: 'after' });
   // A durable stop request survives crashes/provider failures. The worker owns
   // retrying it; the visitor can immediately disconnect their browser audio.
-  return { ...visitorView(record), status: 'completed' };
+  return visitorView(updated ?? record);
 }
 
 export async function refreshConference(record: Conference) {
@@ -204,7 +286,8 @@ export async function handleConferenceEvent(event: string, call: RetellCallInfo)
       : record.expiresAt.getTime() <= now.getTime();
     fields.callId = call.call_id;
     fields.callStatus = ended ? (failed ? 'error' : 'ended') : 'ongoing';
-    fields.status = expired ? 'expired' : ended ? (failed && !record.stopRequested ? 'failed' : 'completed') : 'active';
+    fields.status = expired ? 'expired' : ended ? (failed && !record.stopRequested ? 'failed' : 'completed')
+      : record.stopRequested ? 'completed' : 'active';
     if (ended) {
       const end = new Date(Math.min(call.end_timestamp || now.getTime(), record.expiresAt.getTime()));
       fields.sessionEnd = end;

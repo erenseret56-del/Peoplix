@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Filter } from 'mongodb';
 import { z } from 'zod';
 import { authenticateJWT, requireSuperAdmin } from '../../middleware/auth.js';
@@ -65,7 +65,7 @@ export async function conferenceRoutes(app: FastifyInstance) {
   const publicOptions = { config: { rateLimit: false }, bodyLimit: 2048 } as const;
   app.post('/sessions', publicOptions, async (request, reply) => {
     const body = z.object({ email: z.string().max(254), consent: z.literal(true) }).strict().parse(request.body);
-    return reply.status(201).send({ success: true, data: await createConference(body.email, body.consent, request.ip) });
+    return reply.status(201).send({ success: true, data: await createConference(body.email, body.consent, request.ip, request.headers.authorization) });
   });
   app.get('/session', publicOptions, async (request, reply) => {
     return reply.send({ success: true, data: visitorView(await refreshConference(await authenticateConference(request.headers.authorization))) });
@@ -102,14 +102,14 @@ export async function conferenceRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data, pagination: { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) } });
   });
 
-  async function adminRecord(request: FastifyRequest, _reply: FastifyReply) {
+  async function adminRecord(request: FastifyRequest) {
     const params = z.object({ sessionId: z.string().uuid() }).passthrough().parse(request.params);
     const record = await conferences().findOne({ sessionId: params.sessionId });
     if (!record) throw new AppError('NOT_FOUND', 'Conference session not found.', 404);
     return record;
   }
   app.get('/activity/:sessionId', adminOptions, async (request, reply) => {
-    const record = await adminRecord(request, reply);
+    const record = await adminRecord(request);
     return reply.send({ success: true, data: {
       sessionId: record.sessionId, email: record.email, companyDomain: record.companyDomain,
       companyName: record.companyName, sessionStart: record.sessionStart, sessionEnd: record.sessionEnd,
@@ -120,7 +120,7 @@ export async function conferenceRoutes(app: FastifyInstance) {
     } });
   });
   app.get('/activity/:sessionId/recording/:callId', adminOptions, async (request, reply) => {
-    const record = await adminRecord(request, reply);
+    const record = await adminRecord(request);
     const { callId } = z.object({ callId: z.string().min(1).max(200) }).passthrough().parse(request.params);
     if (!record.calls.some(call => call.callId === callId)) throw new AppError('NOT_FOUND', 'Recording not found.', 404);
     // Refresh provider-signed URLs on demand; never return them in public/admin JSON.

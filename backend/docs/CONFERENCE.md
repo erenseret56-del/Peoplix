@@ -23,12 +23,12 @@ Relevant provider references: [Create web call](https://docs.retellai.com/api-re
 
 ## Session and call enforcement
 
-- A random 256-bit opaque token authorizes only a single conference session. Only its SHA-256 hash is stored. It cannot authorize the normal JWT endpoints. The browser stores it in session storage for recovery; it is never put in URLs or local storage.
-- Email is normalized and validated on the server. The configurable blocklist rejects known personal/disposable domains, including their subdomains. Unknown domains are allowed; this does **not** verify mailbox ownership or prove the sender represents a company.
+- A random 256-bit opaque token authorizes only a single unfinished conference session. Only its SHA-256 hash is stored. It cannot authorize the normal JWT endpoints. The browser temporarily stores it in session storage for pending/active recovery and removes it at completion or expiry; terminal tokens never bypass the email screen. Only an active call restores automatically.
+- Email is normalized and validated on the server. The configurable blocklist rejects known personal/disposable domains, including their subdomains. Unknown domains are allowed; this does **not** verify mailbox ownership or prove the sender represents a company. MongoDB is the usage authority: a normalized email with a completed/expired participating call receives `CONFERENCE_ALREADY_USED`, regardless of device or browser.
 - A five-minute absolute expiry is set by the backend at admission. Every visitor API checks it independently of cleanup. MongoDB retains the activity after expiration; it is not a TTL-deleted session record.
 - The three-minute conversation budget starts when a call is reserved and includes connection setup. Retries share the original deadline and cannot extend it. At most three attempts are retained per session. The backend deadline worker stops the Retell call at the shared deadline, while the browser timer ends local audio promptly. New attempts with less than 75 seconds left are refused to leave enough setup and conversation time.
 - Each backend process runs one deadline scan per second using shared MongoDB leases. It terminates overdue/explicitly ended calls with Retell's stop-call API, retries failures, expires inactive sessions and reconciles missing artifacts for up to ten minutes after session expiry. Call shutdown has normal scheduler/provider network latency; provider outages cannot be made instantaneous by the application. Alert on worker/provider errors and test delayed connection attempts before launch.
-- Atomic reservation prevents duplicate call creation across instances and tabs. Call IDs are bound before credentials are released. The provider's metadata includes `source=conference`, `conferenceSessionId` and `conferenceAttemptId`, with no tenant ID or visitor email.
+- A sparse unique hashed-email reservation prevents two tabs or instances from creating concurrent first-use sessions. Legacy records remain readable without a destructive migration. Entering an email without participating does not permanently consume it; the same tab can resume its unfinished reservation, and an untouched expired reservation can be recycled. Call IDs are bound before credentials are released. The provider's metadata includes `source=conference`, `conferenceSessionId` and `conferenceAttemptId`, with no tenant ID or visitor email.
 - Signed webhooks update the reserved call attempt, tolerate duplicates and do not downgrade terminal/analyzed state. A conflicting update returns an error for Retell retry. Unreserved conference metadata is rejected instead of creating an orphan customer call. Earlier failed attempts retain their own media.
 - The visitor can explicitly recheck a disconnected session. Only that recovery action queries Retell; the visual countdown makes no API requests. A page exit requests a durable stop and stops browser audio. The server and provider limits remain active if the tab crashes or frontend code is altered.
 
@@ -40,7 +40,7 @@ The `conference` collection holds visitor identity and a bounded array of call a
 
 List responses are paginated and omit transcripts, provider URLs and token hashes. Search uses literal email/domain prefixes or an exact call ID; dates are UTC and inclusive. Detail requests retrieve full text only on demand. Playback refreshes the provider-signed URL, validates its HTTPS storage host, then streams through an authenticated endpoint. The browser receives a local blob URL, never an unauthenticated recording link. Provider media retention still determines how long recordings remain retrievable; set the conference data-retention policy in the deployment process.
 
-The form explicitly records recording/transcription consent with a notice version. Do not encourage visitors to supply sensitive employee information. Session email limits (three per hour) and shared per-IP admission limits are MongoDB-backed, with TTL cleanup for counters. Review ingress/WAF rate limits and trusted-proxy configuration for the conference network; many visitors may share one public IP.
+The form explicitly records recording/transcription consent with a notice version. Do not encourage visitors to supply sensitive employee information. The shared per-IP admission control is a high-volume abuse/throughput limit, not a usage identity or one-demo restriction, and its MongoDB counters have TTL cleanup. Review ingress/WAF rate limits and trusted-proxy configuration for the conference network; many visitors may share one public IP.
 
 ## Verification
 
@@ -51,7 +51,7 @@ npm run build
 npm run test:conference
 ```
 
-The browser suite tests the **production build** with Playwright and locally installed Chrome. On a CI host, install Chrome with `npx playwright install chrome` or adjust the Playwright channel. It covers desktop/mobile/tablet layout, animation/reduced motion, email errors, voice UI using an SDK double, expiry, CTA placement, navigation and admin routing. Generated images go to ignored `test-results/`.
+The browser suite tests the **production build** with Playwright and locally installed Chrome. On a CI host, install Chrome with `npx playwright install chrome` or adjust the Playwright channel. It covers desktop/mobile/tablet layout, animation/reduced motion, email errors, same-device email switching, terminal-token cleanup, pending refresh, active reconnect, voice UI using an SDK double, expiry, CTA placement, navigation and admin routing. Generated images go to ignored `test-results/`.
 
 From `backend`:
 
@@ -60,7 +60,7 @@ npm run build
 npm run test:conference
 ```
 
-Backend tests use an isolated ephemeral MongoDB and mocked Retell HTTP responses. They exercise authentication, validation, race handling, repeat/delayed webhooks, persistent deadline enforcement, retry budgets, private media, filters, and 300 simultaneous session admissions/call reservations. They never connect to the configured production database or place paid calls.
+Backend tests use an isolated ephemeral MongoDB and mocked Retell HTTP responses. They exercise authentication, normalized one-use email enforcement, simultaneous same-email admission, abandoned reservations, repeat/delayed webhooks, persistent deadline enforcement, retry budgets, private media, filters, and 300 simultaneous distinct-email session admissions/call reservations. They never connect to the configured production database or place paid calls.
 
 ## Capacity and launch checks
 

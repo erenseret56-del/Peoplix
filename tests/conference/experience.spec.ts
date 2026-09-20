@@ -9,8 +9,10 @@ function session(overrides = {}) {
     expiresAt: new Date(now + 300000).toISOString(), conversationEndsAt: null, callStatus: null, canRetry: false,
     serverNow: new Date(now).toISOString(), ...overrides };
 }
-async function mockApi(page: Page, options: { expired?: boolean; shortCall?: boolean } = {}) {
-  let current = session();
+async function mockApi(page: Page, options: { expired?: boolean; shortCall?: boolean; activeRestore?: boolean; usedEmails?: string[] } = {}) {
+  let current = session(options.activeRestore ? { status: 'active', callStatus: 'ongoing', conversationEndsAt: new Date(Date.now() + 180000).toISOString() } : {});
+  let currentEmail = '';
+  const usedEmails = new Set((options.usedEmails || []).map(value => value.trim().toLowerCase()));
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/stats/summary')) return route.fulfill({ json: { success: true, data: {
@@ -20,6 +22,9 @@ async function mockApi(page: Page, options: { expired?: boolean; shortCall?: boo
     if (path.endsWith('/sessions')) {
       const { email } = route.request().postDataJSON();
       if (email.endsWith('@gmail.com')) return route.fulfill({ status: 400, json: { success: false, error: { code: 'WORK_EMAIL_REQUIRED', message: 'Please enter your company email address to access the conference experience.' } } });
+      const normalized = email.trim().toLowerCase();
+      if (usedEmails.has(normalized)) return route.fulfill({ status: 409, json: { success: false, error: { code: 'CONFERENCE_ALREADY_USED', message: 'This email has already completed the PEOPLIX conference experience.' } } });
+      currentEmail = normalized;
       current = session(); return route.fulfill({ status: 201, json: { success: true, data: current } });
     }
     if (path.endsWith('/demo-requests/verify-access')) return route.fulfill({ json: { success: true, data: { granted: true } } });
@@ -32,7 +37,7 @@ async function mockApi(page: Page, options: { expired?: boolean; shortCall?: boo
       current = session({ status: 'active', callStatus: 'registered', conversationEndsAt: new Date(Date.now() + (options.shortCall ? 6000 : 180000)).toISOString() });
       return route.fulfill({ json: { success: true, data: { ...current, accessToken: 'test-provider-token', callId: 'call_browser_test' } } });
     }
-    if (path.endsWith('/end')) { current = { ...current, status: 'completed' }; return route.fulfill({ json: { success: true, data: current } }); }
+    if (path.endsWith('/end')) { if (currentEmail) usedEmails.add(currentEmail); current = { ...current, status: 'completed' }; return route.fulfill({ json: { success: true, data: current } }); }
     return route.fulfill({ json: { success: true, data: [], pagination: { total: 0, totalPages: 0, page: 1 } } });
   });
 }
@@ -112,10 +117,44 @@ test('voice controls, warning and call deadline complete the experience', async 
   await expect(page.getByRole('link', { name: 'Book a Demo' })).toHaveAttribute('href', '/#contact');
 });
 
-test('expired session restores into a clear completion state', async ({ page }) => {
+test('expired device token returns to email entry instead of blocking the browser', async ({ page }) => {
   await page.addInitScript(value => sessionStorage.setItem('peoplix_conference_token', value), token);
   await mockApi(page, { expired: true }); await page.goto('/conference');
-  await expect(page.getByText('Your five-minute conference session has ended.')).toBeVisible();
+  await expect(page.getByLabel('Enter your work email')).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem('peoplix_conference_token'))).toBeNull();
+});
+
+test('pending refresh shows email entry while an active call still restores', async ({ page }) => {
+  await page.addInitScript(value => sessionStorage.setItem('peoplix_conference_token', value), token);
+  await mockApi(page); await page.goto('/conference');
+  await expect(page.getByLabel('Enter your work email')).toBeVisible();
+
+  await page.unrouteAll();
+  await mockApi(page, { activeRestore: true }); await page.reload();
+  await expect(page.getByRole('button', { name: 'Check session' })).toBeVisible();
+  await expect(page.getByLabel('Enter your work email')).toHaveCount(0);
+});
+
+test('completed email is blocked by backend but another email works on the same device', async ({ page }) => {
+  await mockApi(page, { shortCall: true }); await mockVoice(page); await page.goto('/conference');
+  await page.getByRole('button', { name: 'Skip introduction' }).click(); await enter(page);
+  await page.getByRole('button', { name: 'Start Conversation' }).click();
+  await expect(page.getByRole('heading', { name: 'Thanks for experiencing PEOPLIX.' })).toBeVisible({ timeout: 10000 });
+  expect(await page.evaluate(() => sessionStorage.getItem('peoplix_conference_token'))).toBeNull();
+
+  await page.reload();
+  await expect(page.getByLabel('Enter your work email')).toBeVisible();
+  await page.getByLabel('Enter your work email').fill('another@different-company.test');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Meet Ava', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Start Conversation' })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByLabel('Enter your work email')).toBeVisible();
+  await page.getByLabel('Enter your work email').fill('VISITOR@EXAMPLE-CORP.TEST');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Meet Ava', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Thanks for experiencing PEOPLIX.' })).toBeVisible();
 });
 
 test('homepage preserves Business Value → CTA → FAQ order and navigation', async ({ page }) => {
