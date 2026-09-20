@@ -12,11 +12,10 @@ Conference calling uses the same public/demo Retell agent and call creator as th
 
    ```env
    CONFERENCE_BLOCKED_EMAIL_DOMAINS=
-   CONFERENCE_IP_SESSIONS_PER_MINUTE=600
    ```
 
 4. No new browser secrets, Twilio numbers, customer accounts or separate admin credentials are needed. If the frontend/API have different origins, retain the existing `VITE_BASE_URL` and CORS setup. HTTPS is required for microphone access outside localhost. Route SPA refreshes to `index.html`.
-5. Start the backend normally (`npm run build && npm start`). Startup creates additive indexes for `conference` and `conference_rate_limits`. Do not run a production server locally against production MongoDB merely to test this feature.
+5. Start the backend normally (`npm run build && npm start`). Startup removes the obsolete unique email-reservation index and creates the current `conference` indexes without deleting activity records. Do not run a production server locally against production MongoDB merely to test this feature.
 6. Perform a real staging voice call before enabling the conference publicly. Verify the existing v2 web-call flow with the installed `retell-client-js-sdk` version, audio on iOS Safari and Android Chrome, all webhook deliveries and recording playback. The automated SDK double is not a provider compatibility test.
 
 Relevant provider references: [Create web call](https://docs.retellai.com/api-references/create-web-call), [Stop call](https://docs.retellai.com/api-references/stop-call), [Browser calling](https://docs.retellai.com/deploy/web-call). Retell's latest documentation also describes v3 calling; existing PEOPLIX calls remain on v2 with the existing SDK. Do not migrate the production calling integration as part of conference configuration.
@@ -24,11 +23,11 @@ Relevant provider references: [Create web call](https://docs.retellai.com/api-re
 ## Session and call enforcement
 
 - A random 256-bit opaque token authorizes only a single unfinished conference session. Only its SHA-256 hash is stored. It cannot authorize the normal JWT endpoints. The browser temporarily stores it in session storage for pending/active recovery and removes it at completion or expiry; terminal tokens never bypass the email screen. Only an active call restores automatically.
-- Email is normalized and validated on the server. The configurable blocklist rejects known personal/disposable domains, including their subdomains. Unknown domains are allowed; this does **not** verify mailbox ownership or prove the sender represents a company. MongoDB is the usage authority: a normalized email with a completed/expired participating call receives `CONFERENCE_ALREADY_USED`, regardless of device or browser.
+- Email is normalized and validated on the server. The configurable blocklist rejects known personal/disposable domains, including their subdomains. Unknown domains are allowed; this does **not** verify mailbox ownership or prove the sender represents a company. A valid work email may create any number of conference sessions; every session is stored as a separate activity record under the same normalized email.
 - A five-minute absolute expiry is set by the backend at admission. Every visitor API checks it independently of cleanup. MongoDB retains the activity after expiration; it is not a TTL-deleted session record.
 - The three-minute conversation budget starts when a call is reserved and includes connection setup. Retries share the original deadline and cannot extend it. At most three attempts are retained per session. The backend deadline worker stops the Retell call at the shared deadline, while the browser timer ends local audio promptly. New attempts with less than 75 seconds left are refused to leave enough setup and conversation time.
 - Each backend process runs one deadline scan per second using shared MongoDB leases. It terminates overdue/explicitly ended calls with Retell's stop-call API, retries failures, expires inactive sessions and reconciles missing artifacts for up to ten minutes after session expiry. Call shutdown has normal scheduler/provider network latency; provider outages cannot be made instantaneous by the application. Alert on worker/provider errors and test delayed connection attempts before launch.
-- A sparse unique hashed-email reservation prevents two tabs or instances from creating concurrent first-use sessions. Legacy records remain readable without a destructive migration. Entering an email without participating does not permanently consume it; the same tab can resume its unfinished reservation, and an untouched expired reservation can be recycled. Call IDs are bound before credentials are released. The provider's metadata includes `source=conference`, `conferenceSessionId` and `conferenceAttemptId`, with no tenant ID or visitor email.
+- Email history, existing activity records, device/browser storage, cookies, IP addresses and fingerprints are not admission gates. Concurrent submissions with the same email create independent session records. An active session token may restore its own call for continuity, but it never prevents a new session. Call IDs are bound before credentials are released. The provider's metadata includes `source=conference`, `conferenceSessionId` and `conferenceAttemptId`, with no tenant ID or visitor email.
 - Signed webhooks update the reserved call attempt, tolerate duplicates and do not downgrade terminal/analyzed state. A conflicting update returns an error for Retell retry. Unreserved conference metadata is rejected instead of creating an orphan customer call. Earlier failed attempts retain their own media.
 - The visitor can explicitly recheck a disconnected session. Only that recovery action queries Retell; the visual countdown makes no API requests. A page exit requests a durable stop and stops browser audio. The server and provider limits remain active if the tab crashes or frontend code is altered.
 
@@ -40,7 +39,7 @@ The `conference` collection holds visitor identity and a bounded array of call a
 
 List responses are paginated and omit transcripts, provider URLs and token hashes. Search uses literal email/domain prefixes or an exact call ID; dates are UTC and inclusive. Detail requests retrieve full text only on demand. Playback refreshes the provider-signed URL, validates its HTTPS storage host, then streams through an authenticated endpoint. The browser receives a local blob URL, never an unauthenticated recording link. Provider media retention still determines how long recordings remain retrievable; set the conference data-retention policy in the deployment process.
 
-The form explicitly records recording/transcription consent with a notice version. Do not encourage visitors to supply sensitive employee information. The shared per-IP admission control is a high-volume abuse/throughput limit, not a usage identity or one-demo restriction, and its MongoDB counters have TTL cleanup. Review ingress/WAF rate limits and trusted-proxy configuration for the conference network; many visitors may share one public IP.
+The form explicitly records recording/transcription consent with a notice version. Do not encourage visitors to supply sensitive employee information. Conference admission itself does not use an IP limit. Review any infrastructure-level ingress/WAF controls separately so shared conference Wi-Fi does not prevent a visitor with a valid work email from entering.
 
 ## Verification
 
@@ -60,7 +59,7 @@ npm run build
 npm run test:conference
 ```
 
-Backend tests use an isolated ephemeral MongoDB and mocked Retell HTTP responses. They exercise authentication, normalized one-use email enforcement, simultaneous same-email admission, abandoned reservations, repeat/delayed webhooks, persistent deadline enforcement, retry budgets, private media, filters, and 300 simultaneous distinct-email session admissions/call reservations. They never connect to the configured production database or place paid calls.
+Backend tests use an isolated ephemeral MongoDB and mocked Retell HTTP responses. They exercise authentication, repeat and simultaneous same-email sessions, repeat/delayed webhooks, persistent deadline enforcement, retry budgets, private media, filters, and 300 simultaneous distinct-email session admissions/call reservations. They never connect to the configured production database or place paid calls.
 
 ## Capacity and launch checks
 

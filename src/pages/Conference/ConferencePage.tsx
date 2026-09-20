@@ -141,11 +141,7 @@ export default function ConferencePage() {
     try {
       const data = await conferenceRequest<ConferenceSession & { token: string }>('/sessions', activeToken.current || undefined, { email, consent });
       activeToken.current = data.token; saveToken(data.token); setToken(data.token); applySession(data);
-    } catch (err) {
-      if (err instanceof ConferenceError && err.code === 'CONFERENCE_ALREADY_USED') {
-        forgetToken(); setSession(null); setStage('complete'); setError('');
-      } else setError(err instanceof Error ? err.message : 'Please try again.');
-    }
+    } catch (err) { setError(err instanceof Error ? err.message : 'Please try again.'); }
     finally { busyRef.current = false; setBusy(false); }
   }
 

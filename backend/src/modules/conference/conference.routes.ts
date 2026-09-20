@@ -65,7 +65,7 @@ export async function conferenceRoutes(app: FastifyInstance) {
   const publicOptions = { config: { rateLimit: false }, bodyLimit: 2048 } as const;
   app.post('/sessions', publicOptions, async (request, reply) => {
     const body = z.object({ email: z.string().max(254), consent: z.literal(true) }).strict().parse(request.body);
-    return reply.status(201).send({ success: true, data: await createConference(body.email, body.consent, request.ip, request.headers.authorization) });
+    return reply.status(201).send({ success: true, data: await createConference(body.email, body.consent) });
   });
   app.get('/session', publicOptions, async (request, reply) => {
     return reply.send({ success: true, data: visitorView(await refreshConference(await authenticateConference(request.headers.authorization))) });

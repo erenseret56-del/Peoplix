@@ -129,7 +129,6 @@ export const Collections = {
   BILLING_CONFIG: 'billing_config',
   NUMBER_PROFILES: 'number_profiles',
   CONFERENCE: 'conference',
-  CONFERENCE_RATE_LIMITS: 'conference_rate_limits',
 } as const;
 
 /**
@@ -141,13 +140,18 @@ export async function createIndexes(): Promise<void> {
   try {
     const database = getDatabase();
 
-    // Companies
-    await database.collection(Collections.CONFERENCE).createIndexes([
+    const conference = database.collection(Collections.CONFERENCE);
+    // Remove the former one-session-per-email reservation. Existing activity
+    // records remain intact; only the obsolete uniqueness constraint is removed.
+    try {
+      await conference.dropIndex('emailKey_1');
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? Number(error.code) : undefined;
+      if (code !== 26 && code !== 27) throw error;
+    }
+    await conference.createIndexes([
       { key: { sessionId: 1 }, unique: true },
       { key: { tokenHash: 1 }, unique: true },
-      // New conference admissions reserve one record per normalized email.
-      // Sparse keeps legacy records indexable without a destructive migration.
-      { key: { emailKey: 1 }, unique: true, sparse: true },
       { key: { email: 1 } },
       { key: { companyDomain: 1 } },
       { key: { callId: 1 }, unique: true, sparse: true },
@@ -157,11 +161,6 @@ export async function createIndexes(): Promise<void> {
       { key: { expiresAt: 1, status: 1 } },
       { key: { nextActionAt: 1, leaseUntil: 1 } },
     ]);
-    await database.collection(Collections.CONFERENCE_RATE_LIMITS).createIndexes([
-      { key: { key: 1 }, unique: true },
-      { key: { expiresAt: 1 }, expireAfterSeconds: 0 },
-    ]);
-
     await database.collection(Collections.COMPANIES).createIndexes([
       { key: { slug: 1 }, unique: true },
       { key: { status: 1 } },

@@ -22,8 +22,6 @@ export interface Conference {
   _id?: ObjectId;
   sessionId: string;
   tokenHash: string;
-  /** Hashed normalized email used only for the unique admission reservation. */
-  emailKey?: string;
   email: string;
   companyDomain: string;
   companyName?: string;

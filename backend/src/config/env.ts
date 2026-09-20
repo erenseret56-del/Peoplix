@@ -42,7 +42,6 @@ const envSchema = z.object({
 
   // Conference reuses the existing public demo agent and Retell webhook.
   CONFERENCE_BLOCKED_EMAIL_DOMAINS: z.string().default(''),
-  CONFERENCE_IP_SESSIONS_PER_MINUTE: z.coerce.number().int().min(1).max(10000).default(600),
 
   // Twilio phone numbers
   TWILIO_ACCOUNT_SID: z.string().optional(),
@@ -132,7 +131,6 @@ export const config = {
 
   conference: {
     blockedDomains: env.CONFERENCE_BLOCKED_EMAIL_DOMAINS,
-    ipSessionsPerMinute: env.CONFERENCE_IP_SESSIONS_PER_MINUTE,
   },
 
   admin: {
