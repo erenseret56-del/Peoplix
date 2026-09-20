@@ -16,7 +16,10 @@ export default function ConferenceIntro() {
     <div className="conf-intro-art" aria-hidden="true">
       <div className="conf-intro-wave">{Array.from({ length: 25 }, (_, i) => <i key={i} style={{ '--i': i, '--bar': `${12 + Math.sin(i * .8) ** 2 * (70 - Math.abs(i - 12) * 4)}px` } as CSSProperties} />)}</div>
       <img className="conf-intro-mark" src={logo} alt="" width="112" height="112" />
-      <div className="conf-intro-word">PEOPLIX<span>A more human kind of intelligence.</span></div>
+      <div className="conf-intro-copy">
+        <div className="conf-intro-wordmark">PEOPLIX</div>
+        <div className="conf-intro-tagline">A more human kind of intelligence.</div>
+      </div>
     </div>
     <button className="conf-intro-skip" onClick={() => setVisible(false)}>Skip introduction <span aria-hidden="true">↗</span></button>
   </motion.div>;

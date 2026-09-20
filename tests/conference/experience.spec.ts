@@ -95,6 +95,61 @@ test('desktop cinematic entry, independent page bundle and work email access', a
   expect(errors).toEqual([]);
 });
 
+test('conference intro stays centered and borderless across viewport sizes', async ({ page }) => {
+  await mockApi(page);
+
+  const viewports = [
+    { name: 'mobile-portrait', width: 390, height: 844 },
+    { name: 'mobile-landscape', width: 844, height: 390 },
+    { name: 'tablet', width: 768, height: 1024 },
+    { name: 'laptop', width: 1280, height: 800 },
+    { name: 'desktop', width: 1440, height: 1000 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto('/conference');
+
+    const layout = await page.locator('.conf-intro').evaluate(element => {
+      const rect = (selector: string) => {
+        const box = element.querySelector(selector)!.getBoundingClientRect();
+        return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, height: box.height, centerX: box.left + box.width / 2, centerY: box.top + box.height / 2 };
+      };
+      const intro = element.getBoundingClientRect();
+      const artStyle = getComputedStyle(element.querySelector('.conf-intro-art')!);
+      const taglineStyle = getComputedStyle(element.querySelector('.conf-intro-tagline')!);
+      return {
+        viewport: { width: innerWidth, height: innerHeight },
+        intro: { width: intro.width, height: intro.height },
+        art: rect('.conf-intro-art'),
+        mark: rect('.conf-intro-mark'),
+        wordmark: rect('.conf-intro-wordmark'),
+        tagline: rect('.conf-intro-tagline'),
+        skip: rect('.conf-intro-skip'),
+        artChrome: { border: artStyle.borderStyle, background: artStyle.backgroundColor, shadow: artStyle.boxShadow },
+        taglineWhiteSpace: taglineStyle.whiteSpace,
+      };
+    });
+
+    expect(layout.intro.width).toBeCloseTo(layout.viewport.width, 0);
+    expect(layout.intro.height).toBeCloseTo(layout.viewport.height, 0);
+    expect(layout.art.centerX).toBeCloseTo(layout.viewport.width / 2, 0);
+    expect(layout.art.centerY).toBeCloseTo(layout.viewport.height / 2, 0);
+    expect(layout.mark.centerX).toBeCloseTo(layout.viewport.width / 2, 0);
+    expect(layout.wordmark.centerX).toBeCloseTo(layout.viewport.width / 2, 0);
+    expect(layout.tagline.centerX).toBeCloseTo(layout.viewport.width / 2, 0);
+    expect(layout.taglineWhiteSpace).toBe('nowrap');
+    expect(layout.artChrome).toEqual({ border: 'none', background: 'rgba(0, 0, 0, 0)', shadow: 'none' });
+    expect(layout.skip.right).toBeLessThanOrEqual(layout.viewport.width);
+    expect(layout.skip.bottom).toBeLessThanOrEqual(layout.viewport.height);
+    expect(layout.skip.left).toBeGreaterThanOrEqual(0);
+    expect(layout.skip.top).toBeGreaterThanOrEqual(0);
+
+    await page.waitForTimeout(1750);
+    await page.screenshot({ path: `test-results/conference-intro-${viewport.name}.png` });
+  }
+});
+
 for (const width of [390, 768]) {
   test(`responsive conference at ${width}px has usable form and no horizontal overflow`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 }); await mockApi(page); await page.goto('/conference');
