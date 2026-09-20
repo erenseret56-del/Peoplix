@@ -1,0 +1,53 @@
+.conf-admin { min-height: 100vh; color: #151515; background: #f7f6f3; color-scheme: light; }
+.conf-admin :is(button,a,input,select):focus-visible, .conf-admin-dialog :is(button,audio,div):focus-visible { outline: 2px solid #111; outline-offset: 3px; }
+.conf-admin button, .conf-admin-dialog button { cursor: pointer; }
+.conf-admin button:disabled, .conf-admin-dialog button:disabled { cursor: default; opacity: .4; }
+.conf-admin-header { border-bottom: 1px solid #e7e7e7; background: #fff; padding: 20px 5vw; display: flex; align-items: center; justify-content: space-between; }
+.conf-admin-header a { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.conf-admin-header > span { font-size: 9px; letter-spacing: .15em; color: #777; }
+.conf-admin-main { max-width: 1600px; padding: 45px 5vw; margin: auto; }
+.conf-admin-heading { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-bottom: 34px; }
+.conf-admin-kicker { font-size: 9px; letter-spacing: .18em; color: #807055; margin-bottom: 10px; }
+.conf-admin-heading h1 { font-size: clamp(26px, 3vw, 38px); letter-spacing: -.04em; font-weight: 500; margin-bottom: 10px; }
+.conf-admin-heading p:last-child { font-size: 12px; color: #777; }
+.conf-admin-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; border: 1px solid #dedbd4; background: #fff; color: #222; padding: 10px 15px; border-radius: 8px; font-size: 11px; white-space: nowrap; }
+.conf-admin-filters { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 16px; padding: 20px; border: 1px solid #e7e7e7; border-radius: 12px 12px 0 0; background: #fff; }
+.conf-admin-filters label { display: flex; flex-direction: column; gap: 8px; font-size: 10px; color: #666; }
+.conf-admin-filters input, .conf-admin-filters select { font-size: 12px; padding: 11px 12px; border: 1px solid #e7e7e7; background: #fff; border-radius: 6px; color: #222; min-height: 42px; }
+.conf-admin-search { flex: 1; min-width: 220px; }
+.conf-admin-search > div { display: flex; align-items: center; gap: 8px; border: 1px solid #e7e7e7; border-radius: 6px; padding-left: 12px; }
+.conf-admin-search input { border: 0; width: 100%; }
+.conf-admin-apply { background: #111; color: #fff; border-color: #111; }
+.conf-admin-table-wrap { overflow-x: auto; background: #fff; border: 1px solid #e7e7e7; border-top: 0; border-radius: 0 0 12px 12px; }
+.conf-admin table { border-collapse: collapse; text-align: left; width: 100%; min-width: 1300px; font-size: 11px; }
+.conf-admin th { padding: 17px 20px; color: #6b6b6b; font-size: 9px; font-weight: 500; background: #fbfbfa; border-bottom: 1px solid #e7e7e7; white-space: nowrap; }
+.conf-admin td { padding: 20px; border-bottom: 1px solid #f1f1ef; }
+.conf-admin tbody tr:hover { background: #fcfbf8; }
+.conf-admin-visitor { font-weight: 500; display: flex; align-items: center; gap: 8px; text-align: left; }
+.conf-admin-row-note { display: block; color: #888; font-size: 9px; margin-top: 6px; text-transform: capitalize; }
+.conf-admin-status { display: inline-block; padding: 5px 9px; border: 1px solid #e6e3dc; border-radius: 20px; font-size: 9px; color: #615a4f; text-transform: capitalize; white-space: nowrap; background: #faf9f6; }
+.conf-admin-call-id { font-family: ui-monospace, monospace; font-size: 10px; overflow-wrap: anywhere; max-width: 220px; color: #777; }
+.conf-admin-artifact { text-decoration: underline; text-underline-offset: 4px; padding: 6px 0; }
+.conf-admin-empty { text-align: center; padding: 70px 20px !important; color: #777; font-size: 12px; }
+.conf-admin-pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; font-size: 11px; color: #777; }
+.conf-admin-pagination > div { display: flex; gap: 8px; }
+.conf-admin-muted { color: #777; font-size: 11px; }
+.conf-admin-footnote { margin-top: 22px; line-height: 1.7; }
+.conf-admin-error { padding: 14px 18px; font-size: 12px; color: #624c2c; background: #f8f1e4; border-radius: 8px; margin-bottom: 16px; }
+.conf-admin-dialog { margin: auto; padding: 28px; border: 1px solid #e7e7e7; border-radius: 16px; width: min(760px, calc(100vw - 32px)); max-height: 88dvh; color: #151515; background: #fff; box-shadow: 0 20px 80px #00000012; }
+.conf-admin-dialog::backdrop { background: #0005; }
+.conf-admin-dialog-header { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 25px; }
+.conf-admin-dialog-header h2 { font-size: 21px; letter-spacing: -.03em; overflow-wrap: anywhere; }
+.conf-admin-dialog-header button { padding: 8px; }
+.conf-admin-details { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 0; border-top: 1px solid #eee; }
+.conf-admin-details dt { font-size: 10px; color: #777; margin-bottom: 7px; }
+.conf-admin-details dd { font-size: 12px; overflow-wrap: anywhere; }
+.conf-admin-call { margin-top: 22px; padding-top: 24px; border-top: 1px solid #e7e7e7; }
+.conf-admin-call-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.conf-admin-call h3 { font-size: 16px; font-weight: 500; }
+.conf-admin-call h4 { font-size: 12px; font-weight: 600; margin: 24px 0 12px; }
+.conf-admin-call > .conf-admin-call-id { max-width: none; margin-bottom: 20px; }
+.conf-admin-text, .conf-admin-transcript { white-space: pre-wrap; font-size: 12px; line-height: 1.9; color: #555; overflow-wrap: anywhere; }
+.conf-admin-transcript { background: #fafafa; padding: 18px; border: 1px solid #eee; border-radius: 8px; max-height: 360px; overflow-y: auto; }
+.conf-admin-call audio { width: 100%; }
+@media (max-width: 600px) { .conf-admin-main { padding: 30px 18px; } .conf-admin-header { padding: 18px; } .conf-admin-heading { align-items: flex-start; } .conf-admin-filters { padding: 16px; gap: 12px; } .conf-admin-filters label { flex: 1; min-width: 120px; } .conf-admin-filters .conf-admin-search { min-width: 100%; } .conf-admin-dialog { padding: 20px; } .conf-admin-dialog-header h2 { font-size: 18px; } }

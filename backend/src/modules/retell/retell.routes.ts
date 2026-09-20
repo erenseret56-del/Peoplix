@@ -13,6 +13,7 @@ import { companiesRepository } from '../companies/companies.repository.js';
 import { addNumberToSipTrunk } from '../phone-numbers/phone-numbers.service.js';
 import { config } from '../../config/env.js';
 import { describeRetellPayload, extractRetellInboundCall, RetellInboundPayload } from './retell.inbound.js';
+import { handleConferenceEvent } from '../conference/conference.service.js';
 
 // ── WEBHOOK AUTH MIDDLEWARE ───────────────────────────────────────────────────
 async function requireRetellWebhook(request: FastifyRequest, reply: FastifyReply) {
@@ -187,10 +188,12 @@ export async function retellRoutes(fastify: FastifyInstance) {
   // WEBHOOKS  (called directly by Retell AI)
   // ────────────────────────────────────────────────────────────────────────────
 
-  fastify.post('/webhook', { preHandler: [requireRetellWebhook] }, async (request, reply) => {
+  fastify.post('/webhook', { preHandler: [requireRetellWebhook], config: { rateLimit: false } }, async (request, reply) => {
     const body = request.body as any;
     const event = body.event || body.event_type;
     const call = body.call || body;
+
+    if (await handleConferenceEvent(event, call)) return reply.send({ success: true });
 
     if (event === 'call_started') {
       await retellService.handleCallStarted({
@@ -224,6 +227,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
 
   fastify.post('/webhook/call-started', { preHandler: [requireRetellWebhook] }, async (request, reply) => {
     const body = request.body as any;
+    if (await handleConferenceEvent('call_started', body.call || body)) return reply.send({ success: true });
     await retellService.handleCallStarted({
       call_id: body.call_id,
       agent_id: body.agent_id,
@@ -239,6 +243,7 @@ export async function retellRoutes(fastify: FastifyInstance) {
 
   fastify.post('/webhook/call-ended', { preHandler: [requireRetellWebhook] }, async (request, reply) => {
     const body = request.body as any;
+    if (await handleConferenceEvent('call_ended', body.call || body)) return reply.send({ success: true });
     await retellService.handleCallEnded({
       call_id: body.call_id,
       agent_id: body.agent_id,

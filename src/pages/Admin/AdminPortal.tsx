@@ -232,6 +232,10 @@ const AdminPortal = () => {
           </button>
 
           <div className="flex flex-col gap-2 min-w-[240px] items-stretch">
+            {localStorage.getItem('role')?.toLowerCase() === 'super_admin' && <button
+              onClick={() => navigate('/admin/conference')}
+              className="flex items-center gap-2 rounded-full border border-[#D9D3C9] bg-white px-4 py-2.5 text-sm font-medium text-[#1F2430] hover:bg-[#F6F4F0]"
+            ><PhoneCall size={16} />Conference Activity</button>}
             <button
               onClick={() => navigate("/admin/demo-requests")}
               className="flex items-center justify-between gap-2 rounded-full border border-[#D9D3C9] bg-[#F6F4F0] px-4 py-2.5 text-sm font-medium text-[#1F2430] transition-all duration-200 hover:bg-[#EFE9E0]"

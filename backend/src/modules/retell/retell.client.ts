@@ -21,11 +21,23 @@ export interface RetellAgentResponse {
   last_modification_timestamp: number;
 }
 
+export interface RetellCallOverrides {
+  agent: {
+    max_call_duration_ms: number;
+    webhook_url: string;
+    webhook_events: string[];
+    data_storage_setting: 'everything';
+    opt_in_signed_url: boolean;
+  };
+  retell_llm?: { knowledge_base_ids: string[]; begin_message: string };
+}
+
 export interface RetellCallInfo {
   call_id: string;
   call_status: string;
   agent_id: string;
   call_type?: string;
+  disconnection_reason?: string;
   from_number?: string;
   to_number?: string;
   start_timestamp?: number;
@@ -86,11 +98,12 @@ class RetellClient {
     };
   }
 
-  private async request<T>(method: string, path: string, body?: any): Promise<T> {
+  private async request<T>(method: string, path: string, body?: any, timeoutMs?: number): Promise<T> {
     const url = `${RETELL_BASE_URL}${path}`;
     const res = await fetch(url, {
       method,
       headers: this.headers,
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
       ...(body && { body: JSON.stringify(body) }),
     });
 
@@ -123,12 +136,14 @@ class RetellClient {
    */
   async createWebCall(
     agentId: string,
-    companyId: string,
+    companyId: string | null,
     dynamicVariables?: RetellDynamicVariables,
-    extraMetadata?: Record<string, any>
+    extraMetadata?: Record<string, any>,
+    overrides?: RetellCallOverrides
   ): Promise<RetellWebCallResponse> {
     return this.request<RetellWebCallResponse>('POST', '/v2/create-web-call', {
       agent_id: agentId,
+      ...(overrides ? { agent_override: overrides } : {}),
 
       // Dynamic variables replace {{placeholders}} in the Retell LLM prompt
       // e.g. {{company_name}} → "Acme Corp", {{company_phone}} → "+1 800 123 4567"
@@ -136,14 +151,27 @@ class RetellClient {
 
       // Metadata is returned with every webhook — used to resolve tenant
       metadata: {
-        company_id: companyId,  // CRITICAL: resolves tenant on webhook receipt
+        ...(companyId ? { company_id: companyId } : {}),
         ...extraMetadata,
       },
-    });
+    }, overrides ? 12_000 : undefined);
   }
 
-  async getAgent(agentId: string): Promise<RetellAgentResponse> {
-    return this.request<RetellAgentResponse>('GET', `/get-agent/${agentId}`);
+  async stopCall(callId: string): Promise<void> {
+    await this.request<void>('POST', `/v2/stop-call/${encodeURIComponent(callId)}`, undefined, 8_000);
+  }
+
+  async getAgent(agentId: string, timeoutMs?: number): Promise<RetellAgentResponse> {
+    return this.request<RetellAgentResponse>('GET', `/get-agent/${encodeURIComponent(agentId)}`, undefined, timeoutMs);
+  }
+
+  async getLlm(llmId: string): Promise<{
+    general_prompt?: string;
+    general_tools?: Array<{ type: string }>;
+    states?: unknown[];
+    knowledge_base_ids?: string[];
+  }> {
+    return this.request('GET', `/get-retell-llm/${encodeURIComponent(llmId)}`, undefined, 8_000);
   }
 
   async listAgents(): Promise<RetellAgentResponse[]> {
@@ -214,8 +242,8 @@ class RetellClient {
     return error instanceof Error && /Retell API error:\s*404\b/i.test(error.message);
   }
 
-  async getCall(callId: string): Promise<RetellCallInfo> {
-    return this.request<RetellCallInfo>('GET', `/v2/get-call/${callId}`);
+  async getCall(callId: string, timeoutMs?: number): Promise<RetellCallInfo> {
+    return this.request<RetellCallInfo>('GET', `/v2/get-call/${encodeURIComponent(callId)}`, undefined, timeoutMs);
   }
 
   async listCalls(limit = 100): Promise<RetellCallSummary[]> {

@@ -1,35 +1,38 @@
-import { BrowserRouter, Outlet, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import "./App.css";
-import { useState } from "react";
-import LandingPage from "./pages/LandingPage";
-import Login from "./pages/Auth/Login";
+import { lazy, Suspense, useState } from "react";
+const LandingPage = lazy(() => import("./pages/LandingPage"));
+const Login = lazy(() => import("./pages/Auth/Login"));
 import PrivateRoute from "./routes/private";
-import Dashboard from "./pages/Admin/Dashboard";
-import AdminPortal from "./pages/Admin/AdminPortal";
-import UserDashboard from "./pages/Users/Dashboard";
+const Dashboard = lazy(() => import("./pages/Admin/Dashboard"));
+const AdminPortal = lazy(() => import("./pages/Admin/AdminPortal"));
+const UserDashboard = lazy(() => import("./pages/Users/Dashboard"));
 import { Toaster } from "react-hot-toast";
-import IntroScreen from "./components/IntroScreen";
+const IntroScreen = lazy(() => import("./components/IntroScreen"));
 
 // import admin pages
-import Agents from "./pages/Admin/Agents";
-import Users from "./pages/Admin/Users";
-import Numbers from "./pages/Admin/Numbers";
-import AvailableNumbers from "./pages/Admin/AvailableNumbers";
-import AvailableModels from "./pages/Admin/AvailableModels";
-import EditWebPage from "./pages/Admin/EditWebPage";
-import DemoRequests from "./pages/Admin/DemoRequests";
-import CompanyRequests from "./pages/Admin/CompanyRequests";
-import CompanyData from "./pages/Users/CompanyData";
-import ReservedNumber from "./pages/Users/ReservedNumber";
-import Recordings from "./pages/Users/Recordings";
-import Billing from "./pages/Users/Billing";
-import PublicInfoPage from "./pages/PublicInfoPage";
-import Layout from "./Layout";
+const Agents = lazy(() => import("./pages/Admin/Agents"));
+const Users = lazy(() => import("./pages/Admin/Users"));
+const Numbers = lazy(() => import("./pages/Admin/Numbers"));
+const AvailableNumbers = lazy(() => import("./pages/Admin/AvailableNumbers"));
+const AvailableModels = lazy(() => import("./pages/Admin/AvailableModels"));
+const EditWebPage = lazy(() => import("./pages/Admin/EditWebPage"));
+const DemoRequests = lazy(() => import("./pages/Admin/DemoRequests"));
+const CompanyRequests = lazy(() => import("./pages/Admin/CompanyRequests"));
+const CompanyData = lazy(() => import("./pages/Users/CompanyData"));
+const ReservedNumber = lazy(() => import("./pages/Users/ReservedNumber"));
+const Recordings = lazy(() => import("./pages/Users/Recordings"));
+const Billing = lazy(() => import("./pages/Users/Billing"));
+const PublicInfoPage = lazy(() => import("./pages/PublicInfoPage"));
+const Layout = lazy(() => import("./Layout"));
+const ConferencePage = lazy(() => import("./pages/Conference/ConferencePage"));
+const ConferenceActivity = lazy(() => import("./pages/Admin/ConferenceActivity"));
 
 // Only show intro once per browser session
 const hasSeenIntro = sessionStorage.getItem("peoplix_intro_seen") === "true";
 
-function App() {
+function SiteIntro() {
+  const { pathname } = useLocation();
   const [showIntro, setShowIntro] = useState(!hasSeenIntro);
 
   const handleIntroDone = () => {
@@ -37,16 +40,24 @@ function App() {
     setShowIntro(false);
   };
 
+  return showIntro && pathname.replace(/\/+$/, '') !== '/conference' ? <Suspense fallback={null}><IntroScreen onDone={handleIntroDone} /></Suspense> : null;
+}
+
+function App() {
+
   return (
     <>
       {/* Intro overlay — renders on top of everything, unmounts when done */}
-      {showIntro && <IntroScreen onDone={handleIntroDone} />}
 
       <BrowserRouter>
+        <SiteIntro />
+        <Suspense fallback={<div role="status" className="min-h-screen bg-white text-neutral-600 grid place-items-center text-sm">Loading PEOPLIX…</div>}>
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/signin" element={<Login />} />
+          <Route path="/conference" element={<ConferencePage />} />
+          <Route path="/admin/conference" element={<PrivateRoute allowedRoles={["super_admin"]}><ConferenceActivity /></PrivateRoute>} />
           <Route path="/:slug" element={<PublicInfoPage />} />
           
           {/* Admin Portal (no auth required for now, just UI) */}
@@ -136,6 +147,7 @@ function App() {
             }
           />
         </Routes>
+        </Suspense>
       </BrowserRouter>
 
       <Toaster

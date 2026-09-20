@@ -128,6 +128,8 @@ export const Collections = {
   COMPANY_REQUESTS: 'company_requests',
   BILLING_CONFIG: 'billing_config',
   NUMBER_PROFILES: 'number_profiles',
+  CONFERENCE: 'conference',
+  CONFERENCE_RATE_LIMITS: 'conference_rate_limits',
 } as const;
 
 /**
@@ -140,6 +142,23 @@ export async function createIndexes(): Promise<void> {
     const database = getDatabase();
 
     // Companies
+    await database.collection(Collections.CONFERENCE).createIndexes([
+      { key: { sessionId: 1 }, unique: true },
+      { key: { tokenHash: 1 }, unique: true },
+      { key: { email: 1 } },
+      { key: { companyDomain: 1 } },
+      { key: { callId: 1 }, unique: true, sparse: true },
+      { key: { 'calls.callId': 1 }, unique: true, sparse: true },
+      { key: { createdAt: -1, _id: -1 } },
+      { key: { status: 1, createdAt: -1 } },
+      { key: { expiresAt: 1, status: 1 } },
+      { key: { nextActionAt: 1, leaseUntil: 1 } },
+    ]);
+    await database.collection(Collections.CONFERENCE_RATE_LIMITS).createIndexes([
+      { key: { key: 1 }, unique: true },
+      { key: { expiresAt: 1 }, expireAfterSeconds: 0 },
+    ]);
+
     await database.collection(Collections.COMPANIES).createIndexes([
       { key: { slug: 1 }, unique: true },
       { key: { status: 1 } },

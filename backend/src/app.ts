@@ -27,6 +27,8 @@ import { siteConfigRoutes }  from './modules/site-config/site-config.routes.js';
 import { demoRequestsRoutes } from './modules/demo-requests/demo-requests.routes.js';
 import { companyRequestsRoutes } from './modules/company-requests/company-requests.routes.js';
 import { billingRoutes } from './modules/billing/billing.routes.js';
+import { conferenceRoutes } from './modules/conference/conference.routes.js';
+import { registerConferenceWorker } from './modules/conference/conference.worker.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -119,6 +121,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(demoRequestsRoutes, { prefix: '/api/demo-requests' });
   await app.register(companyRequestsRoutes, { prefix: '/api/company-requests' });
   await app.register(billingRoutes, { prefix: '/api/billing' });
+  await app.register(conferenceRoutes, { prefix: '/api/conference' });
+  registerConferenceWorker(app);
 
   // ── ERROR HANDLERS ────────────────────────────────────────────────────────
   app.setErrorHandler(errorHandler);

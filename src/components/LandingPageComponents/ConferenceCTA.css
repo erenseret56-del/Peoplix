@@ -1,0 +1,10 @@
+.conference-cta { padding: 40px 24px 72px; display: flex; align-items: center; flex-direction: column; gap: 16px; background: #fff; color: #0b0b0b; text-align: center; }
+.conference-cta > p { font-size: 12px; letter-spacing: .04em; color: #666; }
+.conference-cta > a { display: inline-flex; align-items: center; justify-content: center; gap: 28px; min-height: 58px; padding: 16px 28px; border-radius: 100px; border: 1px solid #242424; background: #0b0b0b; color: #fff; font-size: 14px; font-weight: 500; position: relative; overflow: hidden; box-shadow: 0 5px 16px #0000000d; }
+.conference-cta > a::before { content: ''; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, #ffffff12 50%, transparent 70%); transform: translateX(-110%); transition: transform .7s ease; }
+.conference-cta > a:hover::before { transform: translateX(110%); }
+.conference-cta > a svg { transition: transform .25s; }
+.conference-cta > a:hover svg { transform: translate(2px, -2px); }
+.conference-cta > a:focus-visible { outline: 2px solid #0b0b0b; outline-offset: 5px; }
+.conference-cta-note { color: #666; font-size: 11px; }
+@media (max-width: 600px) { .conference-cta { padding: 28px 20px 48px; } .conference-cta > a { width: min(100%, 340px); gap: 20px; } }

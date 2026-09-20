@@ -89,6 +89,8 @@ export class RetellService {
   }
 
   async resolveCompanyFromCall(callId: string): Promise<string | null> {
+    // Conference calls must never resolve to customer knowledge/tools.
+    if (await getCollection(Collections.CONFERENCE).findOne({ 'calls.callId': callId }, { projection: { _id: 1 } })) return null;
     const cacheKey = `retell:call:${callId}:company`;
     const cached = await cache.get<string>(cacheKey);
     if (cached) return cached;
@@ -114,6 +116,7 @@ export class RetellService {
     // fallback; the phone assignment remains the tenant authority.
     try {
       const call = await retellClient.getCall(callId);
+      if (call.metadata?.source === 'conference' || call.metadata?.conferenceSessionId) return null;
       const companyId = await this.resolveCompanyFromPhone(call.to_number);
       if (companyId) {
         await cache.set(cacheKey, companyId, 600);

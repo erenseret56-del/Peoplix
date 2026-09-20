@@ -50,3 +50,5 @@ chromadb/
 .pytest_cache/
 .coverage
 htmlcov/
+test-results/
+playwright-report/

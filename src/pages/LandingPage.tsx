@@ -1,5 +1,6 @@
 import { lazy, useEffect, useState } from "react";
 import Navbar from "../components/LandingPageComponents/Navbar";
+import ConferenceCTA from "../components/LandingPageComponents/ConferenceCTA";
 // const BookDemo = lazy(() => import("../components/LandingPageComponents/BookDemo"));
 const Contact = lazy(() => import("../components/LandingPageComponents/Contact"));
 const BusinessImpact = lazy(() => import("../components/LandingPageComponents/BuisnessValue"));
@@ -66,6 +67,7 @@ const LandingPage = () => {
       <div id="resources">
         <BusinessImpact />
       </div>
+      <ConferenceCTA />
       <Faqs />
       {/* <BookDemo /> */}
       <Contact />
