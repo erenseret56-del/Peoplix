@@ -4,22 +4,44 @@ import type { Document, ObjectId } from 'mongodb';
 import { getCollection, Collections } from '../../infrastructure/database/index.js';
 import { authenticateJWT, requireSuperAdmin } from '../../middleware/auth.js';
 import { ValidationError } from '../../middleware/errorHandler.js';
+import { config } from '../../config/env.js';
+import { normalizeWorkEmail } from '../conference/conference.policy.js';
 
 interface DemoRequestDoc extends Document {
   _id?: ObjectId;
+  name?: string;
   email: string;
-  phone: string;
-  address: string;
+  company?: string;
+  jobTitle?: string;
+  phone?: string;
+  message?: string;
+  address?: string;
+  source: 'website' | 'conference';
+  conferenceSessionId?: string;
   status: 'new' | 'contacted' | 'closed' | 'access_granted';
   created_at: Date;
   updated_at: Date;
 }
 
-const createSchema = z.object({
+const websiteCreateSchema = z.object({
   email: z.string().trim().email().max(255),
   phone: z.string().trim().min(7).max(50),
   address: z.string().trim().min(3).max(1000),
-});
+  source: z.literal('website').optional(),
+}).strict();
+
+const conferenceCreateSchema = z.object({
+  source: z.literal('conference'),
+  name: z.string().trim().min(2).max(120),
+  email: z.string().trim().email().max(255),
+  company: z.string().trim().min(2).max(160),
+  jobTitle: z.string().trim().min(2).max(160),
+  phone: z.union([z.string().trim().min(7).max(50), z.literal('')]).optional(),
+  message: z.string().trim().max(2000).optional(),
+  conferenceSessionId: z.string().uuid().optional(),
+}).strict();
+
+const createSchema = z.union([conferenceCreateSchema, websiteCreateSchema]);
 
 const updateSchema = z.object({
   status: z.enum(['new', 'contacted', 'closed', 'access_granted']),
@@ -31,16 +53,34 @@ export async function demoRequestsRoutes(fastify: FastifyInstance) {
   /** POST /api/demo-requests - public demo interest form */
   fastify.post('/', { config: { rateLimit: { max: 5, timeWindow: 10 * 60 * 1000 } } }, async (request, reply) => {
     const parsed = createSchema.safeParse(request.body);
-    if (!parsed.success) throw new ValidationError('Please provide a valid email, phone number, and address', parsed.error.errors);
+    if (!parsed.success) throw new ValidationError('Please check the demo request details and try again', parsed.error.errors);
 
     const now = new Date();
-    const result = await col().insertOne({
-      ...parsed.data,
-      email: parsed.data.email.toLowerCase(),
+    const data = parsed.data;
+    const email = data.source === 'conference'
+      ? normalizeWorkEmail(data.email, config.conference.blockedDomains).email
+      : data.email.toLowerCase();
+    let conferenceSessionId: string | undefined;
+    if (data.source === 'conference' && data.conferenceSessionId) {
+      const session = await getCollection(Collections.CONFERENCE).findOne({ sessionId: data.conferenceSessionId, email });
+      if (session) conferenceSessionId = data.conferenceSessionId;
+    }
+    const record: DemoRequestDoc = {
+      ...(data.source === 'conference' ? {
+        name: data.name,
+        company: data.company,
+        jobTitle: data.jobTitle,
+        ...(data.phone ? { phone: data.phone } : {}),
+        ...(data.message ? { message: data.message } : {}),
+        ...(conferenceSessionId ? { conferenceSessionId } : {}),
+      } : { phone: data.phone, address: data.address }),
+      email,
+      source: data.source === 'conference' ? 'conference' : 'website',
       status: 'new',
       created_at: now,
       updated_at: now,
-    } as DemoRequestDoc);
+    };
+    const result = await col().insertOne(record);
 
     return reply.status(201).send({
       success: true,

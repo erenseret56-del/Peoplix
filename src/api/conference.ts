@@ -41,3 +41,34 @@ export function endConferenceOnLeave(token: string) {
     body: '{}', keepalive: true,
   }).catch(() => undefined);
 }
+
+export interface ConferenceDemoRequestInput {
+  source: 'conference';
+  name: string;
+  email: string;
+  company: string;
+  jobTitle: string;
+  phone?: string;
+  message?: string;
+  conferenceSessionId?: string;
+}
+
+export async function submitConferenceDemoRequest(body: ConferenceDemoRequestInput) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 30_000);
+  try {
+    const response = await fetch(`${base}/api/demo-requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    const json = await response.json();
+    if (!response.ok || !json.success) throw new ConferenceError(json.error?.message || 'We could not submit your request. Please try again.', json.error?.code || 'UNAVAILABLE');
+    return json.data as { id: string };
+  } catch (error) {
+    if (error instanceof ConferenceError) throw error;
+    throw new ConferenceError('We could not submit your request. Check your connection and try again.', 'NETWORK');
+  } finally { window.clearTimeout(timeout); }
+}

@@ -9,7 +9,14 @@ function session(overrides = {}) {
     expiresAt: new Date(now + 300000).toISOString(), conversationEndsAt: null, callStatus: null, canRetry: false,
     serverNow: new Date(now).toISOString(), ...overrides };
 }
-async function mockApi(page: Page, options: { expired?: boolean; shortCall?: boolean; activeRestore?: boolean } = {}) {
+interface MockOptions {
+  expired?: boolean;
+  shortCall?: boolean;
+  activeRestore?: boolean;
+  onDemoRequest?: (payload: Record<string, string>) => void;
+  demoRequests?: Array<Record<string, unknown>>;
+}
+async function mockApi(page: Page, options: MockOptions = {}) {
   let current = session(options.activeRestore ? { status: 'active', callStatus: 'ongoing', conversationEndsAt: new Date(Date.now() + 180000).toISOString() } : {});
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
@@ -23,6 +30,13 @@ async function mockApi(page: Page, options: { expired?: boolean; shortCall?: boo
       current = session(); return route.fulfill({ status: 201, json: { success: true, data: current } });
     }
     if (path.endsWith('/demo-requests/verify-access')) return route.fulfill({ json: { success: true, data: { granted: true } } });
+    if (path.endsWith('/demo-requests')) {
+      if (route.request().method() === 'POST') {
+        options.onDemoRequest?.(route.request().postDataJSON());
+        return route.fulfill({ status: 201, json: { success: true, data: { id: 'demo_request_test' } } });
+      }
+      return route.fulfill({ json: { success: true, data: options.demoRequests || [], pagination: { total: options.demoRequests?.length || 0, totalPages: 1, page: 1 } } });
+    }
     if (path.endsWith('/site-config/public/start-call')) return route.fulfill({ json: { success: true, data: { access_token: 'homepage-provider-token', call_id: 'call_homepage_test', agent_name: 'Ava' } } });
     if (path.endsWith('/session')) {
       if (options.expired) return route.fulfill({ status: 410, json: { success: false, error: { code: 'SESSION_EXPIRED', message: 'Your conference session has ended.' } } });
@@ -71,6 +85,7 @@ test('desktop cinematic entry, independent page bundle and work email access', a
   await expect(page.locator('.conf-intro')).toBeVisible();
   await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 5000 });
   await expect(page.getByRole('heading', { name: 'Meet Ava.' })).toBeVisible();
+  await expect(page.getByText('Back to home', { exact: true })).toHaveCount(0);
   expect(scripts.some(url => /AdminPortal|charts-vendor/.test(url))).toBe(false);
   await page.getByLabel('Enter your work email').fill('visitor@gmail.com'); await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Meet Ava', exact: true }).click();
@@ -100,8 +115,10 @@ test('reduced motion skips cinematic wait and keeps keyboard focus visible', asy
   expect(animation).toBe('none');
 });
 
-test('voice controls, warning and call deadline complete the experience', async ({ page }) => {
-  await mockApi(page, { shortCall: true }); await mockVoice(page); await page.goto('/conference');
+test('mobile Ava completion opens and submits the demo request inside conference', async ({ page }) => {
+  let demoPayload: Record<string, string> | undefined;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockApi(page, { shortCall: true, onDemoRequest: payload => { demoPayload = payload; } }); await mockVoice(page); await page.goto('/conference');
   await page.getByRole('button', { name: 'Skip introduction' }).click(); await enter(page);
   await page.getByRole('button', { name: 'Start Conversation' }).click();
   await expect(page.getByRole('button', { name: 'Mute microphone' })).toBeEnabled();
@@ -109,7 +126,19 @@ test('voice controls, warning and call deadline complete the experience', async 
   await expect(page.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
   await expect(page.getByText('About 30 seconds left.', { exact: false })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Thanks for experiencing PEOPLIX.' })).toBeVisible({ timeout: 10000 });
-  await expect(page.getByRole('link', { name: 'Book a Demo' })).toHaveAttribute('href', '/#contact');
+  await expect(page.getByText(/Back to home|Return to PEOPLIX/i)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Book a Demo' }).click();
+  await expect(page).toHaveURL(/\/conference$/);
+  await expect(page.getByRole('heading', { name: "Let's Talk About PEOPLIX" })).toBeVisible();
+  await expect(page.getByLabel('Work Email')).toHaveValue('visitor@example-corp.test');
+  await page.getByLabel('Name').fill('Conference Visitor');
+  await page.getByLabel('Company').fill('Example Corp');
+  await page.getByLabel('Job Title / Role').fill('People Director');
+  await page.getByLabel('Message / What would you like to explore? (optional)').fill('An HR service pilot');
+  await page.getByRole('button', { name: 'Submit Demo Request' }).click();
+  await expect(page.getByRole('heading', { name: 'Request received.' })).toBeVisible();
+  await expect(page).toHaveURL(/\/conference$/);
+  expect(demoPayload).toMatchObject({ source: 'conference', email: 'visitor@example-corp.test', company: 'Example Corp', jobTitle: 'People Director', conferenceSessionId: id });
 });
 
 test('expired device token returns to email entry instead of blocking the browser', async ({ page }) => {
@@ -155,6 +184,16 @@ test('homepage preserves Business Value → CTA → FAQ order and navigation', a
   await cta.click(); await expect(page).toHaveURL(/\/conference$/);
 });
 
+test('mobile public marketing routes show the desktop restriction without redirecting', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => sessionStorage.setItem('peoplix_intro_seen', 'true'));
+  for (const path of ['/', '/about', '/pricing']) {
+    await page.goto(path);
+    await expect(page.getByRole('heading', { name: 'Please come back on desktop.' })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe(path);
+  }
+});
+
 test('homepage Ava demo still starts through the shared voice implementation', async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('peoplix_intro_seen', 'true'));
   await mockApi(page); await mockVoice(page); await page.goto('/');
@@ -163,6 +202,21 @@ test('homepage Ava demo still starts through the shared voice implementation', a
   await page.getByRole('button', { name: 'Verify and start call' }).click();
   await expect(page.getByText('Ava', { exact: true })).toBeVisible();
   await expect(page.getByTitle('Mute')).toBeVisible();
+});
+
+test('desktop website demo request keeps its existing submission contract', async ({ page }) => {
+  let demoPayload: Record<string, string> | undefined;
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.addInitScript(() => sessionStorage.setItem('peoplix_intro_seen', 'true'));
+  await mockApi(page, { onDemoRequest: payload => { demoPayload = payload; } });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start Live Demo Call' }).click();
+  await page.getByLabel('Email address').fill('website@example-corp.test');
+  await page.getByLabel('Phone number').fill('+1 555 111 2222');
+  await page.getByLabel('Address', { exact: true }).fill('Existing website office address');
+  await page.getByRole('button', { name: 'Submit demo request' }).click();
+  await expect(page.getByText('Request submitted. The call will be available after admin approval.')).toBeVisible();
+  expect(demoPayload).toEqual({ email: 'website@example-corp.test', phone: '+1 555 111 2222', address: 'Existing website office address' });
 });
 
 test('conference admin route excludes company admins and visitors', async ({ page }) => {
@@ -178,6 +232,16 @@ test('super admin can open the conference table without runtime errors', async (
   await expect(page.getByText('No conference visitors match these filters.')).toBeVisible();
   await page.screenshot({ path: 'test-results/conference-admin.png', fullPage: true });
   expect(errors).toEqual([]);
+});
+
+test('mobile Super Admin demo inbox remains accessible and identifies conference requests', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => { sessionStorage.setItem('peoplix_intro_seen', 'true'); localStorage.setItem('token', 'fake-admin-token'); localStorage.setItem('role', 'super_admin'); });
+  await mockApi(page, { demoRequests: [{ id: 'request_1', name: 'Conference Visitor', email: 'visitor@example-corp.test', company: 'Example Corp', jobTitle: 'People Director', phone: '+1 555 123 4567', message: 'HR pilot', source: 'conference', conferenceSessionId: id, status: 'new', created_at: new Date().toISOString() }] });
+  await page.goto('/admin/demo-requests');
+  await expect(page.getByRole('heading', { name: 'Demo Requests' })).toBeVisible();
+  await expect(page.getByText('Conference', { exact: true })).toBeVisible();
+  await expect(page.getByText('Conference Visitor', { exact: true })).toBeVisible();
 });
 
 test('admin visitor details expose transcript and summary in an accessible dialog', async ({ page }) => {

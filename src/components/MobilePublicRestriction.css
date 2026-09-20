@@ -1,0 +1,43 @@
+.mobile-public-lock {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: max(32px, env(safe-area-inset-top)) 26px max(32px, env(safe-area-inset-bottom));
+  background: #fff;
+  color: #0b0b0b;
+  text-align: center;
+}
+
+.mobile-public-lock__content {
+  width: min(100%, 430px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: mobile-public-lock-in .65s ease both;
+}
+
+.mobile-public-lock__brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: .16em;
+}
+
+.mobile-public-lock__brand img { object-fit: contain; }
+.mobile-public-lock__rule { width: 38px; height: 1px; margin: 42px 0; background: #d9d9d9; }
+.mobile-public-lock h1 { margin: 0; font-size: clamp(36px, 11vw, 50px); font-weight: 450; line-height: 1.08; letter-spacing: -.045em; }
+.mobile-public-lock p { margin: 22px 0 0; max-width: 370px; color: #626262; font-size: 14px; line-height: 1.8; }
+.mobile-public-lock a { margin-top: 34px; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; padding: 13px 20px; border: 1px solid #d7d7d7; border-radius: 999px; color: #171717; font-size: 12px; font-weight: 600; transition: border-color .2s, background .2s; }
+.mobile-public-lock a:hover { border-color: #999; background: #fafafa; }
+.mobile-public-lock a:focus-visible { outline: 2px solid #0b0b0b; outline-offset: 4px; }
+
+@keyframes mobile-public-lock-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-public-lock__content { animation: none; }
+}

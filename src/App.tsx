@@ -8,6 +8,7 @@ const Dashboard = lazy(() => import("./pages/Admin/Dashboard"));
 const AdminPortal = lazy(() => import("./pages/Admin/AdminPortal"));
 const UserDashboard = lazy(() => import("./pages/Users/Dashboard"));
 import { Toaster } from "react-hot-toast";
+import { MobilePublicRoute, useMobileExperienceViewport } from "./components/MobilePublicRestriction";
 const IntroScreen = lazy(() => import("./components/IntroScreen"));
 
 // import admin pages
@@ -34,13 +35,14 @@ const hasSeenIntro = sessionStorage.getItem("peoplix_intro_seen") === "true";
 function SiteIntro() {
   const { pathname } = useLocation();
   const [showIntro, setShowIntro] = useState(!hasSeenIntro);
+  const mobileExperience = useMobileExperienceViewport();
 
   const handleIntroDone = () => {
     sessionStorage.setItem("peoplix_intro_seen", "true");
     setShowIntro(false);
   };
 
-  return showIntro && pathname.replace(/\/+$/, '') !== '/conference' ? <Suspense fallback={null}><IntroScreen onDone={handleIntroDone} /></Suspense> : null;
+  return showIntro && !mobileExperience && pathname.replace(/\/+$/, '') !== '/conference' ? <Suspense fallback={null}><IntroScreen onDone={handleIntroDone} /></Suspense> : null;
 }
 
 function App() {
@@ -54,11 +56,11 @@ function App() {
         <Suspense fallback={<div role="status" className="min-h-screen bg-white text-neutral-600 grid place-items-center text-sm">Loading PEOPLIX…</div>}>
         <Routes>
           {/* Public Routes */}
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<MobilePublicRoute><LandingPage /></MobilePublicRoute>} />
           <Route path="/signin" element={<Login />} />
           <Route path="/conference" element={<ConferencePage />} />
           <Route path="/admin/conference" element={<PrivateRoute allowedRoles={["super_admin"]}><ConferenceActivity /></PrivateRoute>} />
-          <Route path="/:slug" element={<PublicInfoPage />} />
+          <Route path="/:slug" element={<MobilePublicRoute><PublicInfoPage /></MobilePublicRoute>} />
           
           {/* Admin Portal (no auth required for now, just UI) */}
           <Route

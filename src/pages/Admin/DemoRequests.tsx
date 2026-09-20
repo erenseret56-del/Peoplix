@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Mail, MapPin, Phone, RefreshCw, ShieldCheck, Trash2, Users } from "lucide-react";
+import { ArrowLeft, BriefcaseBusiness, Building2, Mail, MessageSquareText, Phone, RefreshCw, ShieldCheck, Trash2, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { deleteDemoRequests, getDemoRequests, updateDemoRequestStatus } from "../../api/api";
@@ -9,9 +9,15 @@ type RequestStatus = "new" | "contacted" | "closed" | "access_granted";
 
 interface DemoRequest {
   id: string;
+  name?: string;
   email: string;
-  phone: string;
-  address: string;
+  company?: string;
+  jobTitle?: string;
+  phone?: string;
+  message?: string;
+  address?: string;
+  source?: "website" | "conference";
+  conferenceSessionId?: string;
   status: RequestStatus;
   created_at: string;
 }
@@ -120,31 +126,42 @@ const DemoRequests = () => {
 
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_14px_40px_rgba(15,23,42,0.06)]">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[850px] text-left">
+            <table className="w-full min-w-[1400px] text-left">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
                   <th className="w-12 px-4 py-4"><input type="checkbox" checked={allSelected} onChange={() => setSelectedIds(allSelected ? [] : requests.map((request) => request.id))} aria-label="Select all demo requests" /></th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Contact</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Name</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Email</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Company</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Job Title</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Phone</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Address</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Received</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Message / Address</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Source</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Created At</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Status</th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-500">Access</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} className="px-6 py-16 text-center"><Spinner color="#0891B2" /></td></tr>
+                  <tr><td colSpan={11} className="px-6 py-16 text-center"><Spinner color="#0891B2" /></td></tr>
                 ) : requests.length === 0 ? (
-                  <tr><td colSpan={7} className="px-6 py-16 text-center text-sm text-slate-500">No demo requests yet.</td></tr>
+                  <tr><td colSpan={11} className="px-6 py-16 text-center text-sm text-slate-500">No demo requests yet.</td></tr>
                 ) : requests.map((request) => (
                   <tr key={request.id} className="border-b border-slate-100 last:border-0">
                     <td className="px-4 py-5"><input type="checkbox" checked={selectedIds.includes(request.id)} onChange={() => toggleSelection(request.id)} aria-label={`Select request from ${request.email}`} /></td>
                     <td className="px-6 py-5">
-                      <div className="flex items-center gap-2 font-semibold text-slate-800"><Mail size={16} className="text-cyan-600" />{request.email}</div>
+                      <div className="font-semibold text-slate-900">{request.name || "—"}</div>
                     </td>
-                    <td className="px-6 py-5"><div className="flex items-center gap-2 text-sm text-slate-600"><Phone size={15} />{request.phone}</div></td>
-                    <td className="max-w-xs px-6 py-5"><div className="flex items-start gap-2 text-sm text-slate-600"><MapPin size={15} className="mt-0.5 shrink-0" /><span className="whitespace-normal">{request.address}</span></div></td>
+                    <td className="px-6 py-5"><div className="flex items-center gap-2 text-sm text-slate-600"><Mail size={15} className="text-cyan-600" />{request.email}</div></td>
+                    <td className="px-6 py-5"><div className="flex items-center gap-2 text-sm text-slate-600"><Building2 size={15} />{request.company || "—"}</div></td>
+                    <td className="px-6 py-5"><div className="flex items-center gap-2 text-sm text-slate-600"><BriefcaseBusiness size={15} />{request.jobTitle || "—"}</div></td>
+                    <td className="px-6 py-5"><div className="flex items-center gap-2 text-sm text-slate-600"><Phone size={15} />{request.phone || "—"}</div></td>
+                    <td className="max-w-sm px-6 py-5"><div className="flex items-start gap-2 text-sm text-slate-600"><MessageSquareText size={15} className="mt-0.5 shrink-0" /><span className="whitespace-normal">{request.message || request.address || "—"}</span></div></td>
+                    <td className="px-6 py-5">
+                      <span className={`inline-flex rounded-full px-3 py-1.5 text-xs font-bold ${request.source === "conference" ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-600"}`}>{request.source === "conference" ? "Conference" : "Website"}</span>
+                      {request.conferenceSessionId && <span className="mt-2 block max-w-32 truncate font-mono text-[10px] text-slate-400" title={request.conferenceSessionId}>{request.conferenceSessionId}</span>}
+                    </td>
                     <td className="px-6 py-5 text-sm text-slate-500">{new Date(request.created_at).toLocaleString()}</td>
                     <td className="px-6 py-5">
                       <select value={request.status} disabled={updatingId === request.id} onChange={(event) => void handleStatusChange(request, event.target.value as RequestStatus)} className={`rounded-full border-0 px-3 py-2 text-xs font-bold outline-none ${statusStyles[request.status]}`}>

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
-import { ArrowLeft, ArrowUpRight, Check, Headphones, Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react';
+import { ArrowUpRight, Check, Headphones, Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ConferenceError, conferenceRequest, endConferenceOnLeave } from '../../api/conference';
 import type { ConferenceSession } from '../../api/conference';
 import { useAvaDemoCall } from '../../hooks/useAvaDemoCall';
 import logo from '../../assets/images/peoplix-logo.png';
 import ConferenceIntro from './ConferenceIntro';
+import ConferenceDemoRequest from './ConferenceDemoRequest';
 import './conference.css';
 
 type Stage = 'email' | 'restoring' | 'ready' | 'connecting' | 'live' | 'complete' | 'expired' | 'interrupted';
@@ -33,6 +34,7 @@ export default function ConferencePage() {
   const [error, setError] = useState('');
   const [talking, setTalking] = useState(false);
   const [caption, setCaption] = useState('');
+  const [view, setView] = useState<'experience' | 'demo' | 'demo-success'>('experience');
   const [now, setNow] = useState(Date.now);
   const [clockOffset, setClockOffset] = useState(0);
   const busyRef = useRef(false);
@@ -189,17 +191,21 @@ export default function ConferencePage() {
   return <div className="conf-page">
     <ConferenceIntro />
     <header className="conf-header">
-      <Link to="/" className="conf-brand" aria-label="PEOPLIX home"><img src={logo} width="36" height="36" alt="" /><span>PEOPLIX</span></Link>
-      <Link to="/" className="conf-home"><ArrowLeft size={14} aria-hidden="true" /><span>Back to home</span></Link>
+      <div className="conf-brand" aria-label="PEOPLIX"><img src={logo} width="36" height="36" alt="" /><span>PEOPLIX</span></div>
     </header>
     <main className="conf-main" id="conference-main">
       <div className="conf-eyebrow"><span />THE CONFERENCE EXPERIENCE</div>
-      {done ? <>
+      {view === 'demo' ? <ConferenceDemoRequest initialEmail={email} conferenceSessionId={session?.sessionId} onSubmitted={() => setView('demo-success')} />
+      : view === 'demo-success' ? <>
+        <div className="conf-complete-mark"><Check size={30} strokeWidth={1.3} aria-hidden="true" /></div>
+        <h1>Request <em>received.</em></h1>
+        <p className="conf-description">Thank you. Our team will be in touch soon.</p>
+        <button className="conf-primary conf-book" type="button" onClick={() => setView('experience')}>Done</button>
+      </> : done ? <>
         <div className="conf-complete-mark"><Check size={30} strokeWidth={1.3} aria-hidden="true" /></div>
         <h1>{stage === 'expired' ? <>A moment with Ava.<br /><em>A new possibility.</em></> : <>Thanks for experiencing<br /><em>PEOPLIX.</em></>}</h1>
         <p className="conf-description">{stage === 'expired' ? 'Your five-minute conference session has ended.' : 'Meet Ava today. Reimagine how your HR team supports employees.'}</p>
-        <a className="conf-primary conf-book" href="/#contact">Book a Demo <ArrowUpRight size={18} aria-hidden="true" /></a>
-        <Link className="conf-text-link" to="/">Return to PEOPLIX</Link>
+        <button className="conf-primary conf-book" type="button" onClick={() => setView('demo')}>Book a Demo <ArrowUpRight size={18} aria-hidden="true" /></button>
       </> : <>
         <h1>Meet <em>Ava.</em></h1>
         <p className="conf-description">{stage === 'email' ? 'Experience the PEOPLIX AI HR assistant.' : 'Your AI-powered HR voice assistant.'}<br /><span>Good conversations. Better workplaces.</span></p>

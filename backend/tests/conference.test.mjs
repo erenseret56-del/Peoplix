@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { createHmac, randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { ObjectId } from 'mongodb';
 import Fastify from 'fastify';
 import jwt from 'jsonwebtoken';
 
@@ -52,6 +53,7 @@ before(async () => {
   retell = await import('../src/modules/retell/retell.client.ts');
   ({ verifyRetellSignature: verifySignature } = await import('../src/modules/retell/retell.webhook.ts'));
   const routes = await import('../src/modules/conference/conference.routes.ts');
+  const { demoRequestsRoutes } = await import('../src/modules/demo-requests/demo-requests.routes.ts');
   safeRecordingUrl = routes.safeRecordingUrl;
   await db.connectDatabase(); await db.createIndexes();
   app = Fastify({ logger: false });
@@ -60,6 +62,7 @@ before(async () => {
     request.rawBody = body; try { done(null, JSON.parse(body)); } catch (error) { done(error); }
   });
   await app.register(routes.conferenceRoutes, { prefix: '/api/conference' });
+  await app.register(demoRequestsRoutes, { prefix: '/api/demo-requests' });
   // The legacy shared memory cache owns a housekeeping interval without a
   // shutdown hook. Track only intervals created during this module import.
   const originalSetInterval = globalThis.setInterval;
@@ -177,6 +180,40 @@ test('startup index migration removes the obsolete email reservation without del
   const indexes = await service.conferences().indexes();
   assert.equal(indexes.some(index => index.key?.emailKey === 1), false);
   assert.equal(await service.conferences().countDocuments(), before);
+});
+
+test('conference demo requests reuse the existing inbox and retain the website request contract', async () => {
+  const email = `demo-${randomUUID()}@example-corp.test`;
+  const session = await create(email);
+  const website = await app.inject({ method: 'POST', url: '/api/demo-requests', payload: {
+    email: `website-${randomUUID()}@example.test`, phone: '+1 555 111 2222', address: 'Existing website address',
+  } });
+  assert.equal(website.statusCode, 201, website.body);
+
+  const conference = await app.inject({ method: 'POST', url: '/api/demo-requests', payload: {
+    source: 'conference', name: 'Conference Visitor', email: email.toUpperCase(), company: 'Example Corp',
+    jobTitle: 'People Director', message: 'Explore an HR pilot', conferenceSessionId: session.sessionId,
+  } });
+  assert.equal(conference.statusCode, 201, conference.body);
+
+  const stored = await db.getCollection(db.Collections.DEMO_REQUESTS).findOne({ _id: new ObjectId(conference.json().data.id) });
+  assert.equal(stored.source, 'conference');
+  assert.equal(stored.email, email);
+  assert.equal(stored.name, 'Conference Visitor');
+  assert.equal(stored.company, 'Example Corp');
+  assert.equal(stored.jobTitle, 'People Director');
+  assert.equal(stored.message, 'Explore an HR pilot');
+  assert.equal(stored.conferenceSessionId, session.sessionId);
+  assert.equal(stored.phone, undefined);
+
+  const inbox = await app.inject({ url: '/api/demo-requests', headers: auth(adminToken('super_admin')) });
+  assert.equal(inbox.statusCode, 200, inbox.body);
+  assert.equal(inbox.json().data.find(item => item.id === conference.json().data.id).source, 'conference');
+
+  const personal = await app.inject({ method: 'POST', url: '/api/demo-requests', payload: {
+    source: 'conference', name: 'Personal Email', email: 'person@gmail.com', company: 'Example Corp', jobTitle: 'Director',
+  } });
+  assert.equal(personal.statusCode, 400);
 });
 
 test('admin list, details and recordings reject missing, visitor and company credentials', async () => {

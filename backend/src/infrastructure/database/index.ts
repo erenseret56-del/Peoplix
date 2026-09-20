@@ -287,6 +287,8 @@ export async function createIndexes(): Promise<void> {
       { key: { created_at: -1 } },
       { key: { status: 1, created_at: -1 } },
       { key: { email: 1 } },
+      { key: { source: 1, created_at: -1 } },
+      { key: { conferenceSessionId: 1 }, sparse: true },
     ]);
 
     // Public company inquiries
