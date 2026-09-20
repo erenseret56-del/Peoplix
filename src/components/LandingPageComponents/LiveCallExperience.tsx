@@ -1,72 +1,31 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState } from "react";
 import { GoDotFill } from "react-icons/go";
 import ActiveCallModal from "./ActiveCallModal";
 import toast from "react-hot-toast";
-import { RetellWebClient } from "retell-client-js-sdk";
 import Spinner from "../Spinner";
-import { startPublicDemoCall } from "../../api/api";
 import DemoRequestModal from "./DemoRequestModal";
 import DemoAccessModal from "./DemoAccessModal";
+import { useAvaDemoCall } from '../../hooks/useAvaDemoCall';
 
 const LiveCallExperience = () => {
   const [isCallModalOpen, setIsCallModalOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [isCallConnected, setIsCallConnected] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [activeAgentName, setActiveAgentName] = useState("Peoplix AI Agent");
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
-
-  // Initialize Retell SDK
-  const sdk = useMemo(() => new RetellWebClient(), []);
-
-  useEffect(() => {
-    // Handle call events
-    sdk.on("call_started", () => {
-      console.log("Call started");
-      setIsCallConnected(true);
-      setIsLoading(false);
-    });
-
-    sdk.on("call_ended", () => {
-      console.log("Call ended");
-      setIsCallModalOpen(false);
-      setIsCallConnected(false);
-      setIsMuted(false); // Reset mute state
-    });
-
-    sdk.on("error", (error) => {
-      console.error("Retell SDK Error:", error);
-      toast.error("An error occurred during the call.");
-      setIsCallModalOpen(false);
-      setIsLoading(false);
-    });
-
-    return () => {
-      // Cleanup
-      sdk.off("call_started");
-      sdk.off("call_ended");
-      sdk.off("error");
-    };
-  }, [sdk]);
+  const ava = useAvaDemoCall({
+    onStarted: () => setIsCallConnected(true),
+    onEnded: () => { setIsCallModalOpen(false); setIsCallConnected(false); },
+    onError: (error) => { console.error('Retell SDK Error:', error); toast.error('An error occurred during the call.'); setIsCallModalOpen(false); },
+  });
 
   const handleStartCall = async () => {
-    if (isLoading) return;
-
-    setIsLoading(true);
-
     try {
-      const { access_token, agent_name } = await startPublicDemoCall();
-      if (agent_name) setActiveAgentName(agent_name);
-
       setIsCallModalOpen(true);
-      await sdk.startCall({
-        accessToken: access_token,
-      });
+      await ava.start();
     } catch (error) {
       console.error("Error initiating public demo call:", error);
       toast.error(error instanceof Error ? error.message : "Failed to start call. Please try again.");
-      setIsLoading(false);
+      setIsCallModalOpen(false);
     }
   };
 
@@ -82,23 +41,12 @@ const LiveCallExperience = () => {
   };
 
   const handleEndCall = () => {
-    sdk.stopCall();
+    ava.stop();
   };
 
   const handleToggleMute = () => {
     // Retell SDK uses LiveKit under the hood
-    const currentMute = !isMuted;
-    try {
-      const internalSdk = sdk as any;
-      if (internalSdk.room && internalSdk.room.localParticipant) {
-        internalSdk.room.localParticipant.setMicrophoneEnabled(!currentMute);
-        setIsMuted(currentMute);
-      } else {
-        console.warn("SDK room not initialized yet.");
-      }
-    } catch (err) {
-      console.error("Error toggling mute:", err);
-    }
+    if (!ava.toggleMute()) console.warn('SDK room not initialized yet.');
   };
 
   return (
@@ -150,16 +98,16 @@ const LiveCallExperience = () => {
             {/* CTA button */}
             <button
               onClick={() => setIsRequestModalOpen(true)}
-              disabled={isLoading}
+              disabled={ava.isLoading}
               className={`w-full max-w-sm px-10 py-5 font-bold text-base rounded-full
                 flex items-center justify-center gap-3 transition-all duration-300 cursor-pointer
                 disabled:cursor-not-allowed ${
-                  isLoading
+                  ava.isLoading
                     ? 'bg-gray-100 text-gray-400'
                     : 'bg-gray-900 text-white hover:bg-gray-800 shadow-[0_8px_24px_rgba(0,0,0,0.18)] hover:shadow-[0_12px_32px_rgba(0,0,0,0.25)]'
                 }`}
             >
-              {isLoading ? (
+              {ava.isLoading ? (
                 <Spinner color="#000000" />
               ) : (
                 <>
@@ -218,9 +166,9 @@ const LiveCallExperience = () => {
         isOpen={isCallModalOpen}
         isConnected={isCallConnected}
         onClose={handleEndCall}
-        isMuted={isMuted}
+        isMuted={ava.isMuted}
         onToggleMute={handleToggleMute}
-        agentName={activeAgentName}
+        agentName={ava.agentName}
       />
       <DemoRequestModal
         isOpen={isRequestModalOpen}

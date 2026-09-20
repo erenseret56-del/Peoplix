@@ -21,8 +21,7 @@ before(async () => {
   Object.assign(process.env, {
     NODE_ENV: 'test', DATABASE_URL: mongo.getUri(), MONGODB_URI: mongo.getUri(), DB_NAME: 'conference_isolated_test',
     JWT_SECRET: 'test-only-secret-with-at-least-thirty-two-characters', RETELL_API_KEY: testKey,
-    RETELL_AGENT_ID: 'existing-public-agent', CONFERENCE_ENABLED: 'true', CONFERENCE_RETELL_AGENT_ID: 'conference-agent',
-    CONFERENCE_RETELL_WEBHOOK_URL: 'https://api.example.test/api/retell/webhook', CACHE_PROVIDER: 'memory', LOG_LEVEL: 'fatal',
+    RETELL_AGENT_ID: 'existing-public-agent', CACHE_PROVIDER: 'memory', LOG_LEVEL: 'fatal',
     ADMIN_EMAIL: 'admin@example.test', ADMIN_PASSWORD: 'not-used-in-tests',
   });
   globalThis.fetch = async (url, init = {}) => {
@@ -30,7 +29,7 @@ before(async () => {
     const path = new URL(url).pathname;
     const body = init.body ? JSON.parse(init.body) : undefined;
     providerRequests.push({ path, body, method: init.method });
-    if (path.startsWith('/get-agent/')) return Response.json({ agent_id: 'conference-agent', response_engine: { type: 'retell-llm', llm_id: 'conference-llm' } });
+    if (path.startsWith('/get-agent/')) return Response.json({ agent_id: 'existing-public-agent', agent_name: 'Ava', response_engine: { type: 'retell-llm', llm_id: 'conference-llm' } });
     if (path.startsWith('/get-retell-llm/')) return Response.json({ general_prompt: '{{conference_instructions}}', general_tools: unsafeAgent ? [{ type: 'custom' }] : [], knowledge_base_ids: [], states: [] });
     if (path === '/v2/create-web-call') {
       if (createFailure) return Response.json({ message: 'Secret provider diagnostic' }, { status: 503 });
@@ -145,19 +144,16 @@ test('atomic start permits only one provider call across 20 simultaneous request
   assert.equal(responses.filter(response => response.statusCode === 409).length, 19);
   assert.equal(providerRequests.filter(item => item.path === '/v2/create-web-call').length - countBefore, 1);
   const request = providerRequests.filter(item => item.path === '/v2/create-web-call').at(-1).body;
-  assert.ok(request.agent_override.agent.max_call_duration_ms <= 180000);
-  assert.ok(request.agent_override.agent.max_call_duration_ms >= 60000);
-  assert.equal(request.metadata.company_id, undefined);
+  assert.equal(request.agent_id, 'existing-public-agent');
+  assert.equal(request.agent_override, undefined);
+  assert.equal(request.metadata.company_id, 'public-demo');
   assert.equal(request.metadata.conferenceSessionId, session.sessionId);
-  assert.deepEqual(request.agent_override.retell_llm.knowledge_base_ids, []);
-  assert.ok(request.retell_llm_dynamic_variables.conference_instructions.includes('fictional'));
+  assert.equal(request.retell_llm_dynamic_variables.company_name, 'Peoplix');
+  assert.match(request.retell_llm_dynamic_variables.company_knowledge, /Public demo knowledge base/);
 });
 
-test('unsafe agent tools fail closed and visitor error omits provider diagnostics', async () => {
-  const session = await create(); unsafeAgent = true;
-  const response = await app.inject({ method: 'POST', url: '/api/conference/call', headers: auth(session.token), payload: {} });
-  unsafeAgent = false;
-  assert.equal(response.statusCode, 503); assert.equal(response.body.includes('stack'), false);
+test('shared Ava creator omits provider diagnostics on failures', async () => {
+  const session = await create();
   createFailure = true;
   const failed = await app.inject({ method: 'POST', url: '/api/conference/call', headers: auth(session.token), payload: {} });
   createFailure = false;

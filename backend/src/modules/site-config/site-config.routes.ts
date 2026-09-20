@@ -18,8 +18,8 @@ import { authenticateJWT, requireSuperAdmin } from '../../middleware/auth.js';
 import { ValidationError } from '../../middleware/errorHandler.js';
 import { logger } from '../../config/logger.js';
 import { config } from '../../config/env.js';
-import { retellClient } from '../retell/retell.client.js';
 import { OfficeParser } from 'officeparser';
+import { createPublicDemoWebCall } from './public-demo.service.js';
 
 const COLLECTION = 'site_config';
 const CONFIG_ID  = 'global';
@@ -122,42 +122,9 @@ export async function siteConfigRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const cfg = await getConfig();
-      const publicDocs = cfg.knowledge_documents || [];
-      const knowledgeContext = [
-        'Public demo knowledge base:',
-        ...publicDocs.map(doc => [
-          `Document: ${doc.title || 'Untitled'}`,
-          doc.description || '',
-          doc.content_text || '',
-        ].filter(Boolean).join('\n')),
-      ].join('\n\n').slice(0, 100000);
+      const { webCall, agentName, documents } = await createPublicDemoWebCall();
 
-      let agentName = 'Peoplix AI Agent';
-      try {
-        const agent = await retellClient.getAgent(agentId);
-        if (agent?.agent_name) agentName = agent.agent_name;
-      } catch (err) {
-        logger.warn({ err, agentId }, 'Failed to load Retell agent name; using fallback demo label');
-      }
-
-      const webCall = await retellClient.createWebCall(
-        agentId,
-        'public-demo',
-        {
-          company_name: 'Peoplix',
-          company_description: 'AI voice agents for enterprise HR operations. We help HR teams resolve employee requests instantly using conversational AI.',
-          receptionist_name: config.app.receptionistName,
-          greeting_name: config.app.receptionistName,
-          company_email: '',
-          company_phone: '',
-          company_website: 'https://peoplix.ai',
-          company_address: '',
-          company_knowledge: knowledgeContext,
-        }
-      );
-
-      logger.info({ callId: webCall.call_id, agentId, receptionistName: config.app.receptionistName, docs: publicDocs.length }, 'Public demo web call created');
+      logger.info({ callId: webCall.call_id, agentId, receptionistName: config.app.receptionistName, docs: documents }, 'Public demo web call created');
 
       return reply.send({
         success: true,

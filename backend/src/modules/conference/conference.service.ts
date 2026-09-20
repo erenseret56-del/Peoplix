@@ -4,19 +4,17 @@ import { logger } from '../../config/logger.js';
 import { Collections, getCollection } from '../../infrastructure/database/index.js';
 import { AppError } from '../../middleware/errorHandler.js';
 import { retellClient, type RetellCallInfo } from '../retell/retell.client.js';
-import { callDeadline, CONFERENCE_KNOWLEDGE, hashToken, MAX_ATTEMPTS, MIN_CALL_MS, newSessionToken, normalizeWorkEmail, SESSION_MS } from './conference.policy.js';
+import { createPublicDemoWebCall } from '../site-config/public-demo.service.js';
+import { callDeadline, hashToken, MAX_ATTEMPTS, MIN_CALL_MS, newSessionToken, normalizeWorkEmail, SESSION_MS } from './conference.policy.js';
 import type { Conference, ConferenceCall } from './conference.types.js';
 
 export const conferences = () => getCollection<Conference>(Collections.CONFERENCE);
 const terminalCall = (call?: ConferenceCall) => call?.status === 'ended' || call?.status === 'error';
 
 function requireConfigured() {
-  if (!config.conference.enabled || !config.conference.agentId || !config.conference.webhookUrl
-      || !config.retell.apiKey || config.conference.agentId === config.retell.agentId) {
-    throw new AppError('AVA_UNAVAILABLE', 'Ava is not available right now. Please try again shortly.', 503);
-  }
-  const webhook = new URL(config.conference.webhookUrl);
-  if (config.app.isProduction && webhook.protocol !== 'https:') {
+  // Conference intentionally shares the already-working public Ava path.
+  // Its own Mongo session is isolation/analytics, not a second provider config.
+  if (!config.retell.agentId || !config.retell.apiKey) {
     throw new AppError('AVA_UNAVAILABLE', 'Ava is not available right now. Please try again shortly.', 503);
   }
 }
@@ -62,7 +60,7 @@ export async function createConference(emailInput: unknown, consent: unknown, ip
   const record: Conference = {
     ...identity, sessionId: randomUUID(), tokenHash: hashToken(token),
     sessionStart: now, expiresAt: new Date(now.getTime() + SESSION_MS), status: 'created',
-    calls: [], agentId: config.conference.agentId!, consentAt: now, consentVersion: 'conference-v1',
+    calls: [], agentId: config.retell.agentId!, consentAt: now, consentVersion: 'conference-v1',
     createdAt: now, updatedAt: now,
   };
   await conferences().insertOne(record);
@@ -80,27 +78,9 @@ export async function authenticateConference(authorization?: string) {
   return record;
 }
 
-async function verifyDedicatedAgent(agentId: string) {
-  // Fail closed if this ID has ever been bound to customer configuration.
-  const [tenantAgent, tenantConfig, numberProfile, agent] = await Promise.all([
-    getCollection(Collections.RETELL_AGENTS).findOne({ retell_agent_id: agentId }),
-    getCollection('company_ai_configs').findOne({ retell_agent_id: agentId }),
-    getCollection(Collections.NUMBER_PROFILES).findOne({ retell_agent_id: agentId }),
-    retellClient.getAgent(agentId, 8_000),
-  ]);
-  if (tenantAgent || tenantConfig || numberProfile || agent.response_engine?.type !== 'retell-llm' || !agent.response_engine.llm_id) {
-    throw new Error('Conference requires an isolated Retell LLM agent');
-  }
-  const llm = await retellClient.getLlm(agent.response_engine.llm_id);
-  if (llm.general_prompt?.trim() !== '{{conference_instructions}}' || llm.states?.length
-      || llm.knowledge_base_ids?.length || llm.general_tools?.some(tool => tool.type !== 'end_call')) {
-    throw new Error('Conference agent must use the dedicated prompt, no customer knowledge or tools');
-  }
-}
-
 export async function startConferenceCall(record: Conference) {
   requireConfigured();
-  if (record.agentId !== config.conference.agentId) throw new AppError('AVA_UNAVAILABLE', 'Please begin a new conference session.', 503);
+  if (record.agentId !== config.retell.agentId) throw new AppError('AVA_UNAVAILABLE', 'Please begin a new conference session.', 503);
   const now = new Date();
   const deadline = new Date(callDeadline(now.getTime(), record.expiresAt.getTime(), record.conversationEndsAt));
   if (deadline.getTime() - now.getTime() < MIN_CALL_MS + 15_000) {
@@ -120,22 +100,10 @@ export async function startConferenceCall(record: Conference) {
   if (!claimed) throw new AppError('CALL_IN_PROGRESS', 'This session already has a conversation in progress or has ended.', 409);
 
   try {
-    await verifyDedicatedAgent(record.agentId);
     const durationMs = deadline.getTime() - Date.now();
     if (durationMs < MIN_CALL_MS) throw new Error('Insufficient remaining call time');
-    const call = await retellClient.createWebCall(record.agentId, null, {
-      company_name: 'PEOPLIX conference demonstration', receptionist_name: 'Ava', greeting_name: 'Ava',
-      conference_instructions: CONFERENCE_KNOWLEDGE,
-      company_knowledge: CONFERENCE_KNOWLEDGE,
-      additional_instructions: CONFERENCE_KNOWLEDGE,
-    }, { source: 'conference', conferenceSessionId: record.sessionId, conferenceAttemptId: attemptId }, {
-      agent: {
-        max_call_duration_ms: durationMs,
-        webhook_url: config.conference.webhookUrl!,
-        webhook_events: ['call_started', 'call_ended', 'call_analyzed'],
-        data_storage_setting: 'everything', opt_in_signed_url: true,
-      },
-      retell_llm: { knowledge_base_ids: [], begin_message: "Hi, I'm Ava, the PEOPLIX AI HR assistant. What would you like to explore today?" },
+    const { webCall: call } = await createPublicDemoWebCall({
+      source: 'conference', conferenceSessionId: record.sessionId, conferenceAttemptId: attemptId,
     });
     if (!call.call_id || !call.access_token) throw new Error('Incomplete Retell call registration');
     // Bind the ID before sending the single-use credential. A webhook may have

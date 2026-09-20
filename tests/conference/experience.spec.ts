@@ -22,12 +22,14 @@ async function mockApi(page: Page, options: { expired?: boolean; shortCall?: boo
       if (email.endsWith('@gmail.com')) return route.fulfill({ status: 400, json: { success: false, error: { code: 'WORK_EMAIL_REQUIRED', message: 'Please enter your company email address to access the conference experience.' } } });
       current = session(); return route.fulfill({ status: 201, json: { success: true, data: current } });
     }
+    if (path.endsWith('/demo-requests/verify-access')) return route.fulfill({ json: { success: true, data: { granted: true } } });
+    if (path.endsWith('/site-config/public/start-call')) return route.fulfill({ json: { success: true, data: { access_token: 'homepage-provider-token', call_id: 'call_homepage_test', agent_name: 'Ava' } } });
     if (path.endsWith('/session')) {
       if (options.expired) return route.fulfill({ status: 410, json: { success: false, error: { code: 'SESSION_EXPIRED', message: 'Your conference session has ended.' } } });
       return route.fulfill({ json: { success: true, data: current } });
     }
     if (path.endsWith('/call')) {
-      current = session({ status: 'active', callStatus: 'registered', conversationEndsAt: new Date(Date.now() + (options.shortCall ? 1500 : 180000)).toISOString() });
+      current = session({ status: 'active', callStatus: 'registered', conversationEndsAt: new Date(Date.now() + (options.shortCall ? 6000 : 180000)).toISOString() });
       return route.fulfill({ json: { success: true, data: { ...current, accessToken: 'test-provider-token', callId: 'call_browser_test' } } });
     }
     if (path.endsWith('/end')) { current = { ...current, status: 'completed' }; return route.fulfill({ json: { success: true, data: current } }); }
@@ -69,7 +71,7 @@ test('desktop cinematic entry, independent page bundle and work email access', a
   await expect(page.locator('.conf-intro')).toBeVisible();
   await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 5000 });
   await expect(page.getByRole('heading', { name: 'Meet Ava.' })).toBeVisible();
-  expect(scripts.some(url => /AdminPortal|charts-vendor|retell-vendor/.test(url))).toBe(false);
+  expect(scripts.some(url => /AdminPortal|charts-vendor/.test(url))).toBe(false);
   await page.getByLabel('Enter your work email').fill('visitor@gmail.com'); await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Meet Ava', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('company email');
@@ -106,7 +108,7 @@ test('voice controls, warning and call deadline complete the experience', async 
   await page.getByRole('button', { name: 'Mute microphone' }).click();
   await expect(page.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
   await expect(page.getByText('About 30 seconds left.', { exact: false })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Thanks for experiencing PEOPLIX.' })).toBeVisible({ timeout: 5000 });
+  await expect(page.getByRole('heading', { name: 'Thanks for experiencing PEOPLIX.' })).toBeVisible({ timeout: 10000 });
   await expect(page.getByRole('link', { name: 'Book a Demo' })).toHaveAttribute('href', '/#contact');
 });
 
@@ -123,6 +125,16 @@ test('homepage preserves Business Value → CTA → FAQ order and navigation', a
   const order = await page.locator('.conference-cta').evaluate(element => ({ previous: element.previousElementSibling?.id, next: element.nextElementSibling?.textContent }));
   expect(order.previous).toBe('resources'); expect(order.next?.toLowerCase()).toContain('question');
   await cta.click(); await expect(page).toHaveURL(/\/conference$/);
+});
+
+test('homepage Ava demo still starts through the shared voice implementation', async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem('peoplix_intro_seen', 'true'));
+  await mockApi(page); await mockVoice(page); await page.goto('/');
+  await page.getByRole('button', { name: "I've got access" }).click();
+  await page.getByLabel('Approved email address').fill('visitor@example-corp.test');
+  await page.getByRole('button', { name: 'Verify and start call' }).click();
+  await expect(page.getByText('Ava', { exact: true })).toBeVisible();
+  await expect(page.getByTitle('Mute')).toBeVisible();
 });
 
 test('conference admin route excludes company admins and visitors', async ({ page }) => {

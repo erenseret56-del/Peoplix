@@ -40,10 +40,7 @@ const envSchema = z.object({
   RETELL_TWILIO_TERMINATION_URI: emptyStringAsUndefined(z.string().optional()),
   RETELL_INBOUND_WEBHOOK_URL: emptyStringAsUndefined(z.string().url().optional()),
 
-  // Conference is opt-in and never falls back to a customer/demo agent.
-  CONFERENCE_ENABLED: z.enum(['true', 'false']).default('false'),
-  CONFERENCE_RETELL_AGENT_ID: emptyStringAsUndefined(z.string().optional()),
-  CONFERENCE_RETELL_WEBHOOK_URL: emptyStringAsUndefined(z.string().url().optional()),
+  // Conference reuses the existing public demo agent and Retell webhook.
   CONFERENCE_BLOCKED_EMAIL_DOMAINS: z.string().default(''),
   CONFERENCE_IP_SESSIONS_PER_MINUTE: z.coerce.number().int().min(1).max(10000).default(600),
 
@@ -134,9 +131,6 @@ export const config = {
   },
 
   conference: {
-    enabled: env.CONFERENCE_ENABLED === 'true',
-    agentId: env.CONFERENCE_RETELL_AGENT_ID,
-    webhookUrl: env.CONFERENCE_RETELL_WEBHOOK_URL,
     blockedDomains: env.CONFERENCE_BLOCKED_EMAIL_DOMAINS,
     ipSessionsPerMinute: env.CONFERENCE_IP_SESSIONS_PER_MINUTE,
   },
