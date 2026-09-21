@@ -3,6 +3,79 @@
 .conf-page :is(a, button, input, textarea):focus-visible { outline: 2px solid #0b0b0b; outline-offset: 5px; }
 .conf-page button { cursor: pointer; }
 .conf-page button:disabled { cursor: wait; opacity: .55; }
+/* Entry and the live experience share a grid cell during the opening reveal. */
+.conf-experience { position: relative; display: grid; isolation: isolate; min-height: 100dvh; }
+.conf-session-screen { grid-area: 1 / 1; min-width: 0; min-height: 100dvh; display: flex; flex-direction: column; background: #fff; }
+.conf-session-screen[data-entry-visible=true] { height: 100dvh; min-height: 0; overflow: hidden; visibility: hidden; }
+.conf-experience[data-entry-opening=true] { overflow: clip; }
+.conf-entry { grid-area: 1 / 1; position: relative; z-index: 2; height: 100vh; height: 100dvh; min-width: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #e7e2d8 #faf7f0; color: #000; }
+.conf-entry[data-exiting=true] { overflow: hidden; pointer-events: none; }
+.conf-entry-layout { display: flex; flex-direction: column; min-height: 100%; }
+.conf-entry-brand { position: relative; z-index: 1; flex: 0 0 clamp(320px, 48svh, 580px); display: grid; place-items: center; padding: max(24px, env(safe-area-inset-top)) 24px 0; }
+.conf-entry-beige { position: absolute; z-index: -1; inset: 0 -8% -106px; border-radius: 0 0 50% 50% / 0 0 106px 106px; background: radial-gradient(ellipse at 38% 0%, #faf7f077, transparent 78%), #d9b77a; }
+.conf-entry-identity { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.conf-entry-logo { display: block; width: clamp(180px, 24svh, 256px); height: auto; aspect-ratio: 1; object-fit: contain; margin: -14px 0 -19px; }
+.conf-entry-wordmark { padding-left: .25em; font-size: 30px; font-weight: 500; line-height: 1.3; letter-spacing: .25em; }
+.conf-entry-tagline { margin: 19px 0 0; font-size: 10px; font-weight: 400; line-height: 1.9; letter-spacing: .21em; }
+.conf-entry-divider { width: 1px; height: 34px; margin-top: 22px; background: #000; opacity: .22; }
+.conf-entry-bottom { position: relative; z-index: 2; flex: 1; display: flex; flex-direction: column; align-items: center; padding: 106px max(24px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); }
+.conf-entry-ivory { position: absolute; z-index: -1; inset: 99px 0 0; background: #faf7f0; }
+.conf-entry-ivory > svg { position: absolute; left: 0; top: -99px; width: 100%; height: 100px; fill: #faf7f0; overflow: visible; }
+.conf-entry-content { width: min(100%, 420px); text-align: center; }
+.conf-entry-eyebrow { margin: 0 0 13px; color: #777; font-size: 9px; line-height: 1.6; font-weight: 500; letter-spacing: .25em; }
+.conf-entry h1 { margin: 0; font-family: 'Fraunces', Georgia, serif; font-size: clamp(52px, 5.2vw, 72px); font-weight: 500; line-height: 1.08; letter-spacing: -.055em; }
+.conf-entry-description { margin: 14px 0 23px; color: #777; font-size: 12px; line-height: 1.85; }
+.conf-entry .conf-entry-form { width: 100%; max-width: none; }
+.conf-entry-form .conf-entry-email-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.conf-entry-input { position: relative; }
+.conf-entry-input > svg { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); color: #777; pointer-events: none; }
+.conf-entry .conf-entry-input input { height: 56px; padding: 0 18px 0 49px; background: #fff; color: #000; border: 1px solid #e7e2d8; border-radius: 13px; box-shadow: 0 2px 7px #00000003; }
+.conf-entry .conf-entry-input input::placeholder { color: #777; font-size: 13px; }
+.conf-entry .conf-entry-input input:focus { border-color: #d9b77a; }
+.conf-entry-form .conf-consent { color: #777; font-size: 9px; line-height: 1.65; padding: 12px 1px; min-height: 0; }
+.conf-entry-form .conf-consent input { accent-color: #000; }
+.conf-entry .conf-entry-submit { position: relative; display: flex; justify-content: center; min-height: 54px; background: #000; border-color: #000; border-radius: 13px; box-shadow: 0 6px 16px #0000000c; transition: transform .25s ease, box-shadow .25s ease, filter .25s ease; }
+.conf-entry-submit > svg:last-child { position: absolute; right: 20px; margin: 0; }
+.conf-entry-submit:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.15); box-shadow: 0 9px 20px #00000016; }
+.conf-entry-submit:active:not(:disabled) { transform: translateY(0); }
+.conf-entry-form-note { margin: 10px 0 0; color: #777; font-size: 8px; line-height: 1.6; }
+.conf-entry-headphones { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 19px 0 0; color: #777; font-size: 10px; line-height: 1.5; }
+.conf-entry-form .conf-error { max-width: none; margin: 0 0 12px; color: #000; border-color: #e7e2d8; background: #fff; }
+@media (min-width: 1600px) and (min-height: 1000px) {
+  .conf-entry-content { width: 440px; }
+  .conf-entry-eyebrow { margin-bottom: 18px; }
+  .conf-entry-description { margin-top: 18px; margin-bottom: 28px; font-size: 14px; }
+}
+@media (max-width: 600px) {
+  .conf-entry-brand { flex-basis: clamp(300px, 45svh, 440px); padding-top: max(20px, env(safe-area-inset-top)); }
+  .conf-entry-logo { width: clamp(168px, 23svh, 212px); margin-bottom: -13px; }
+  .conf-entry-wordmark { font-size: 25px; letter-spacing: .23em; }
+  .conf-entry-tagline { font-size: 8.5px; margin-top: 15px; letter-spacing: .17em; }
+  .conf-entry-divider { height: 28px; margin-top: 17px; }
+  .conf-entry-beige { bottom: -82px; border-bottom-left-radius: 50% 82px; border-bottom-right-radius: 50% 82px; }
+  .conf-entry-bottom { padding-top: 81px; padding-bottom: max(23px, env(safe-area-inset-bottom)); }
+  .conf-entry-ivory { top: 75px; }
+  .conf-entry-ivory > svg { top: -75px; height: 76px; }
+  .conf-entry-content { width: min(100%, 360px); }
+  .conf-entry-eyebrow { font-size: 8px; margin-bottom: 12px; letter-spacing: .22em; }
+  .conf-entry h1 { font-size: 54px; }
+  .conf-entry-description { font-size: 11px; margin: 13px 0 20px; }
+  .conf-entry-form .conf-consent { padding: 12px 0; font-size: 9px; }
+  .conf-entry-headphones { margin-top: 17px; }
+}
+/* Short viewports keep the vertical composition; the entry itself can scroll. */
+@media (max-height: 540px) and (min-width: 601px) {
+  .conf-entry-brand { flex-basis: 200px; padding-top: max(12px, env(safe-area-inset-top)); }
+  .conf-entry-logo { width: 120px; margin-bottom: -10px; }
+  .conf-entry-wordmark { font-size: 20px; }
+  .conf-entry-tagline { margin-top: 9px; font-size: 7.5px; }
+  .conf-entry-divider { height: 14px; margin-top: 9px; }
+  .conf-entry-beige { bottom: -70px; border-bottom-left-radius: 50% 70px; border-bottom-right-radius: 50% 70px; }
+  .conf-entry-bottom { padding-top: 72px; }
+  .conf-entry-ivory { top: 61px; }
+  .conf-entry-ivory > svg { top: -61px; height: 62px; }
+  .conf-entry h1 { font-size: 48px; }
+}
 .conf-header { display: flex; align-items: center; justify-content: space-between; padding: max(24px, env(safe-area-inset-top)) max(5vw, env(safe-area-inset-right)) 16px max(5vw, env(safe-area-inset-left)); }
 .conf-brand { display: flex; align-items: center; gap: 10px; font-size: 18px; letter-spacing: .14em; font-weight: 650; }
 .conf-brand img { object-fit: contain; }
@@ -23,6 +96,7 @@
 .conf-sculpture-label { position: absolute; bottom: 0; font-size: 8px; letter-spacing: .24em; color: #767676; }
 .is-active .conf-signal i { animation: conf-voice 1.4s calc(var(--i) * -.09s) ease-in-out infinite; }
 .is-speaking .conf-signal i { animation-duration: .65s; }
+@keyframes conf-voice { 0%,100% { transform: scaleY(.45); } 50% { transform: scaleY(1.15); } }
 .conf-form, .conf-conversation { width: min(100%, 392px); }
 .conf-form > label:first-child { display: block; text-align: left; margin-bottom: 9px; font-size: 12px; font-weight: 500; }
 .conf-input-wrap input { display: block; width: 100%; height: 55px; background: #fafafa; color: #0b0b0b; padding: 0 17px; border: 1px solid #e7e7e7; border-radius: 12px; font-size: 16px; transition: border-color .2s, background .2s; scroll-margin: 24px; }

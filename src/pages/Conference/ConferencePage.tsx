@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
 import { ArrowUpRight, Check, Headphones, Mic, MicOff, PhoneOff, Volume2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ConferenceError, conferenceRequest, endConferenceOnLeave } from '../../api/conference';
 import type { ConferenceSession } from '../../api/conference';
 import { useAvaDemoCall } from '../../hooks/useAvaDemoCall';
 import logo from '../../assets/images/peoplix-logo.png';
 import ConferenceIntro from './ConferenceIntro';
+import ConferenceEntry from './ConferenceEntry';
 import ConferenceDemoRequest from './ConferenceDemoRequest';
 import './conference.css';
 
@@ -37,6 +38,10 @@ export default function ConferencePage() {
   const [view, setView] = useState<'experience' | 'demo' | 'demo-success'>('experience');
   const [now, setNow] = useState(Date.now);
   const [clockOffset, setClockOffset] = useState(0);
+  const [entryOpening, setEntryOpening] = useState(false);
+  const reducedMotion = useReducedMotion();
+  const experienceRef = useRef<HTMLDivElement>(null);
+  const focusAfterEntry = useRef(false);
   const busyRef = useRef(false);
   const generation = useRef(0);
   const endedByUser = useRef(false);
@@ -108,6 +113,17 @@ export default function ConferencePage() {
   }, []);
 
   useEffect(() => {
+    if (entryOpening || !focusAfterEntry.current) return;
+    focusAfterEntry.current = false;
+    const action = experienceRef.current?.querySelector<HTMLButtonElement>('.conf-conversation .conf-primary');
+    action?.focus({ preventScroll: true });
+    const bounds = action?.getBoundingClientRect();
+    if (bounds && (bounds.bottom > window.innerHeight || bounds.top < 0)) {
+      action?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'instant' : 'smooth' });
+    }
+  }, [entryOpening, reducedMotion]);
+
+  useEffect(() => {
     const leave = () => {
       generation.current += 1;
       if (avaRef.current.isConnected) {
@@ -142,6 +158,8 @@ export default function ConferencePage() {
     busyRef.current = true; setBusy(true); setError('');
     try {
       const data = await conferenceRequest<ConferenceSession & { token: string }>('/sessions', activeToken.current || undefined, { email, consent });
+      setEntryOpening(true);
+      focusAfterEntry.current = true;
       activeToken.current = data.token; saveToken(data.token); setToken(data.token); applySession(data);
     } catch (err) { setError(err instanceof Error ? err.message : 'Please try again.'); }
     finally { busyRef.current = false; setBusy(false); }
@@ -188,8 +206,16 @@ export default function ConferencePage() {
 
   const done = stage === 'complete' || stage === 'expired';
   const inCall = stage === 'live' || stage === 'connecting';
-  return <div className="conf-page">
+  const showEntry = stage === 'email' && view === 'experience';
+  return <div className="conf-page conf-experience" data-entry-opening={entryOpening}>
     <ConferenceIntro />
+    <AnimatePresence onExitComplete={() => setEntryOpening(false)}>
+      {showEntry && <ConferenceEntry key="email-entry" email={email} consent={consent} busy={busy} error={error}
+        onEmailChange={value => { setEmail(value); setError(''); }} onConsentChange={setConsent} onSubmit={enter} />}
+    </AnimatePresence>
+    <motion.div ref={experienceRef} className="conf-session-screen" data-entry-visible={showEntry} inert={showEntry || entryOpening} aria-hidden={showEntry || entryOpening}
+      initial={false} animate={{ opacity: showEntry ? 0.3 : 1, filter: showEntry && !reducedMotion ? 'blur(12px)' : 'blur(0px)' }}
+      transition={{ duration: reducedMotion ? 0.18 : 0.85, ease: [0.22, 0.68, 0.22, 1] }}>
     <header className="conf-header">
       <div className="conf-brand" aria-label="PEOPLIX"><img src={logo} width="36" height="36" alt="" /><span>PEOPLIX</span></div>
     </header>
@@ -210,16 +236,7 @@ export default function ConferencePage() {
         <h1>Meet <em>Ava.</em></h1>
         <p className="conf-description">{stage === 'email' ? 'Experience the PEOPLIX AI HR assistant.' : 'Your AI-powered HR voice assistant.'}<br /><span>Good conversations. Better workplaces.</span></p>
         <VoiceSculpture active={stage === 'live'} talking={talking} />
-        {stage === 'email' ? <form className="conf-form" onSubmit={enter}>
-          <label htmlFor="conference-email">Enter your work email</label>
-          <div className="conf-input-wrap"><input id="conference-email" name="email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false}
-            placeholder="name@company.com" required maxLength={254} value={email} onChange={event => { setEmail(event.target.value); setError(''); }}
-            aria-invalid={Boolean(error)} aria-describedby={error ? 'conf-error' : 'conf-email-note'} /></div>
-          <label className="conf-consent"><input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} required />
-            <span>I agree to this demo being recorded and transcribed, with my work email, for PEOPLIX conference follow-up. <Link to="/privacy" target="_blank" rel="noreferrer">Privacy policy</Link></span></label>
-          <button className="conf-primary" type="submit" disabled={busy}>{busy ? 'Preparing your experience…' : 'Meet Ava'}<ArrowUpRight size={18} aria-hidden="true" /></button>
-          <p id="conf-email-note" className="conf-form-note">Work email only · No account needed · Up to 3 minutes with Ava</p>
-        </form> : stage === 'restoring' ? <p className="conf-status" role="status">Restoring your conference session…</p> : <div className="conf-conversation">
+        {stage === 'restoring' ? <p className="conf-status" role="status">Restoring your conference session…</p> : <div className="conf-conversation">
           <div className="conf-timers"><span>Session <strong>{time(sessionRemaining)}</strong></span><span>Conversation <strong>{time(callRemaining)}</strong></span></div>
           <div className="conf-live-status" role="status">{stage === 'connecting' ? 'Connecting to Ava…' : stage === 'live' ? talking ? 'Ava is speaking' : ava.isMuted ? 'Microphone muted' : 'Ava is listening' : stage === 'interrupted' ? 'Your session is saved' : 'Ava is ready when you are'}</div>
           {inCall ? <div className="conf-controls">
@@ -233,10 +250,11 @@ export default function ConferencePage() {
           {caption && stage === 'live' && <p className="conf-caption" aria-live="polite" aria-atomic="true">{caption}</p>}
           <p className="conf-form-note">{session?.companyDomain} · This demo is recorded and transcribed.</p>
         </div>}
-        {error && <p className="conf-error" id="conf-error" role="alert">{error}</p>}
+        {error && !showEntry && <p className="conf-error" id="conf-error" role="alert">{error}</p>}
         <div className="conf-bottom-notes"><span><Headphones size={14} aria-hidden="true" />Best with headphones</span><span>Designed for a real conversation</span></div>
       </>}
     </main>
     <footer className="conf-footer"><span>PEOPLE FIRST. POWERED BY AI.</span><span>PEOPLIX <span aria-hidden="true">©</span> {new Date().getFullYear()}</span></footer>
+    </motion.div>
   </div>;
 }

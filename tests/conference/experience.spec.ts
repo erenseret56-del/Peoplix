@@ -150,16 +150,69 @@ test('conference intro stays centered and borderless across viewport sizes', asy
   }
 });
 
-for (const width of [390, 768]) {
+for (const { width, height } of [{ width: 390, height: 844 }, { width: 844, height: 390 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 1000 }]) {
   test(`responsive conference at ${width}px has usable form and no horizontal overflow`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 844 }); await mockApi(page); await page.goto('/conference');
+    await page.setViewportSize({ width, height }); await mockApi(page); await page.goto('/conference');
     await page.getByRole('button', { name: 'Skip introduction' }).click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const input = await page.getByLabel('Enter your work email').boundingBox(); expect(input!.height).toBeGreaterThanOrEqual(44);
+    const logo = await page.locator('.conf-entry-logo').boundingBox();
+    const heading = await page.getByRole('heading', { name: 'Meet Ava.' }).boundingBox();
+    expect(logo!.x + logo!.width / 2).toBeCloseTo(width / 2, 0);
+    expect(heading!.y).toBeGreaterThan(logo!.y + logo!.height);
+    expect(input!.x + input!.width / 2).toBeCloseTo(width / 2, 0);
     await page.screenshot({ path: `test-results/conference-${width}.png`, fullPage: true });
     await enter(page);
+    await expect(page.locator('.conf-entry')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Start Conversation' })).toBeInViewport();
   });
 }
+
+test('accepted email opens the two surfaces and reveals sharp Ava without starting a call', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await mockApi(page);
+  let sessionRequests = 0;
+  let callRequests = 0;
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/conference/sessions') sessionRequests += 1;
+    if (new URL(request.url()).pathname === '/api/conference/call') callRequests += 1;
+  });
+  await page.goto('/conference');
+  await page.getByRole('button', { name: 'Skip introduction' }).click();
+  await page.getByLabel('Enter your work email').fill('visitor@gmail.com');
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Meet Ava', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('company email');
+  await expect(page.locator('.conf-entry')).toHaveAttribute('data-exiting', 'false');
+  await expect(page.getByRole('button', { name: 'Start Conversation' })).toHaveCount(0);
+
+  await page.getByLabel('Enter your work email').fill('visitor@example-corp.test');
+  // Sample rendered frames, so this checks the visible transition rather than just its CSS names.
+  const frames = page.evaluate(() => new Promise<Array<{ up: number; down: number; blur: number; entry: boolean }>>(resolve => {
+    const samples: Array<{ up: number; down: number; blur: number; entry: boolean }> = [];
+    const began = performance.now();
+    const sample = () => {
+      const upper = document.querySelector('.conf-entry-brand');
+      const lower = document.querySelector('.conf-entry-bottom');
+      const screen = document.querySelector('.conf-session-screen')!;
+      const y = (element: Element | null) => element ? new DOMMatrixReadOnly(getComputedStyle(element).transform).m42 : 0;
+      samples.push({ up: y(upper), down: y(lower), blur: parseFloat(getComputedStyle(screen).filter.replace('blur(', '')), entry: Boolean(upper) });
+      if (performance.now() - began < 1800) requestAnimationFrame(sample);
+      else resolve(samples);
+    };
+    requestAnimationFrame(sample);
+  }));
+  await page.getByRole('button', { name: 'Meet Ava', exact: true }).click();
+  const samples = await frames;
+  expect(samples.some(frame => frame.entry && frame.up < -10 && frame.down > 10 && frame.blur > 0 && frame.blur < 12)).toBe(true);
+  await expect(page.locator('.conf-entry')).toHaveCount(0);
+  await expect(page.locator('.conf-session-screen')).toHaveCSS('filter', 'blur(0px)');
+  await expect(page.locator('.conf-session-screen')).toHaveCSS('opacity', '1');
+  await expect(page.getByRole('button', { name: 'Start Conversation' })).toBeFocused();
+  await expect(page).toHaveURL(/\/conference$/);
+  expect(sessionRequests).toBe(2);
+  expect(callRequests).toBe(0);
+});
 
 test('reduced motion skips cinematic wait and keeps keyboard focus visible', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' }); await mockApi(page); await page.goto('/conference');
@@ -168,6 +221,10 @@ test('reduced motion skips cinematic wait and keeps keyboard focus visible', asy
   await expect(page.getByLabel('Enter your work email')).toBeFocused();
   const animation = await page.locator('.conf-signal i').first().evaluate(element => getComputedStyle(element).animationName);
   expect(animation).toBe('none');
+  await enter(page);
+  await expect(page.locator('.conf-entry')).toHaveCount(0, { timeout: 1500 });
+  await expect(page.locator('.conf-session-screen')).toHaveCSS('filter', 'blur(0px)');
+  await expect(page.getByRole('button', { name: 'Start Conversation' })).toBeFocused();
 });
 
 test('mobile Ava completion opens and submits the demo request inside conference', async ({ page }) => {
