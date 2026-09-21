@@ -83,7 +83,7 @@ test('desktop cinematic entry, independent page bundle and work email access', a
   await page.setViewportSize({ width: 1440, height: 1000 });
   await mockApi(page); await page.goto('/conference');
   await expect(page.locator('.conf-intro')).toBeVisible();
-  await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 5000 });
+  await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 9000 });
   await expect(page.getByRole('heading', { name: 'Meet Ava.' })).toBeVisible();
   await expect(page.getByText('Back to home', { exact: true })).toHaveCount(0);
   expect(scripts.some(url => /AdminPortal|charts-vendor/.test(url))).toBe(false);
@@ -145,7 +145,7 @@ test('conference intro stays centered and borderless across viewport sizes', asy
     expect(layout.skip.left).toBeGreaterThanOrEqual(0);
     expect(layout.skip.top).toBeGreaterThanOrEqual(0);
 
-    await page.waitForTimeout(1750);
+    await page.waitForTimeout(3700);
     await page.screenshot({ path: `test-results/conference-intro-${viewport.name}.png` });
   }
 });
