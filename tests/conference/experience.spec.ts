@@ -83,7 +83,8 @@ test('desktop cinematic entry, independent page bundle and work email access', a
   await page.setViewportSize({ width: 1440, height: 1000 });
   await mockApi(page); await page.goto('/conference');
   await expect(page.locator('.conf-intro')).toBeVisible();
-  await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 9000 });
+  await expect(page.locator('.conf-intro-layers')).toHaveCount(0);
+  await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 13000 });
   await expect(page.getByRole('heading', { name: 'Meet Ava.' })).toBeVisible();
   await expect(page.getByText('Back to home', { exact: true })).toHaveCount(0);
   expect(scripts.some(url => /AdminPortal|charts-vendor/.test(url))).toBe(false);
@@ -150,6 +151,47 @@ test('conference intro stays centered and borderless across viewport sizes', asy
   }
 });
 
+test('one waveform forms the orbit, merges into the P, and replays cleanly', async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 1600 });
+  await mockApi(page); await page.goto('/conference');
+  const states = await page.locator('.conf-intro').evaluate(intro => {
+    const animations = intro.getAnimations({ subtree: true });
+    const sample = (ms: number) => {
+      animations.forEach(animation => { animation.pause(); animation.currentTime = ms; });
+      const bars = Array.from(intro.querySelectorAll('.conf-intro-wave i')).map(element => element.getBoundingClientRect());
+      const logo = intro.querySelector('.conf-intro-mark')!.getBoundingClientRect();
+      const wave = intro.querySelector('.conf-intro-wave')!.getBoundingClientRect();
+      return {
+        barVerticalSpan: Math.max(...bars.map(bar => bar.bottom)) - Math.min(...bars.map(bar => bar.top)),
+        logoOpacity: Number(getComputedStyle(intro.querySelector('.conf-intro-mark')!).opacity),
+        wordmarkOpacity: Number(getComputedStyle(intro.querySelector('.conf-intro-wordmark span')!).opacity),
+        taglineOpacity: Number(getComputedStyle(intro.querySelector('.conf-intro-tagline')!).opacity),
+        waveCenterX: wave.left + wave.width / 2,
+        waveWidth: wave.width,
+        logoCenterX: logo.left + logo.width / 2,
+      };
+    };
+    return { waveCount: intro.querySelectorAll('.conf-intro-wave').length, barCount: intro.querySelectorAll('.conf-intro-wave i').length,
+      expansionCount: intro.querySelectorAll('.conf-intro-layers').length,
+      forming: sample(1700), orbit: sample(4200), merge: sample(7000), lockup: sample(9400) };
+  });
+  expect(states.waveCount).toBe(1);
+  expect(states.barCount).toBe(31);
+  expect(states.expansionCount).toBe(0);
+  expect(states.forming.logoOpacity).toBe(0);
+  expect(states.orbit.logoOpacity).toBe(1);
+  expect(states.orbit.barVerticalSpan).toBeGreaterThan(states.forming.barVerticalSpan * 2);
+  expect(states.merge.waveWidth).toBeLessThan(100);
+  expect(Math.abs(states.merge.waveCenterX - states.merge.logoCenterX)).toBeLessThan(35);
+  expect(states.lockup.wordmarkOpacity).toBe(1);
+  expect(states.lockup.taglineOpacity).toBe(1);
+  await page.getByRole('button', { name: 'Skip introduction' }).click();
+  await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 2000 });
+  await expect(page.getByRole('heading', { name: 'Meet Ava.' })).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.conf-intro-wave')).toHaveCount(1);
+  await expect(page.locator('.conf-intro-wave i')).toHaveCount(31);
+});
 for (const { width, height } of [{ width: 390, height: 844 }, { width: 844, height: 390 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 1000 }]) {
   test(`responsive conference at ${width}px has usable form and no horizontal overflow`, async ({ page }) => {
     await page.setViewportSize({ width, height }); await mockApi(page); await page.goto('/conference');
