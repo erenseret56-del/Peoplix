@@ -39,7 +39,13 @@ export default function ConferencePage() {
   const [now, setNow] = useState(Date.now);
   const [clockOffset, setClockOffset] = useState(0);
   const [entryOpening, setEntryOpening] = useState(false);
+  const [celebrating, setCelebrating] = useState(false);
   const reducedMotion = useReducedMotion();
+  useEffect(() => {
+    if (!celebrating) return;
+    const timer = window.setTimeout(() => setCelebrating(false), 2600);
+    return () => window.clearTimeout(timer);
+  }, [celebrating]);
   const experienceRef = useRef<HTMLDivElement>(null);
   const focusAfterEntry = useRef(false);
   const busyRef = useRef(false);
@@ -82,7 +88,7 @@ export default function ConferencePage() {
 
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = 'Meet Ava · PEOPLIX Conference'; window.scrollTo(0, 0);
+    document.title = 'Meet Ava · Peoplix Conference'; window.scrollTo(0, 0);
     return () => { document.title = previousTitle; };
   }, []);
 
@@ -209,15 +215,25 @@ export default function ConferencePage() {
   const showEntry = stage === 'email' && view === 'experience';
   return <div className="conf-page conf-experience" data-entry-opening={entryOpening}>
     <ConferenceIntro />
-    <AnimatePresence onExitComplete={() => setEntryOpening(false)}>
+    <AnimatePresence onExitComplete={() => { if (entryOpening) { setEntryOpening(false); if (!reducedMotion) setCelebrating(true); } }}>
       {showEntry && <ConferenceEntry key="email-entry" email={email} consent={consent} busy={busy} error={error}
         onEmailChange={value => { setEmail(value); setError(''); }} onConsentChange={setConsent} onSubmit={enter} />}
     </AnimatePresence>
+    {celebrating && <div className="conf-celebration" aria-hidden="true">
+      {Array.from({ length: 32 }, (_, i) => <i key={i} style={{
+        '--paper-x': `${8 + (i * 47 % 85)}%`,
+        '--paper-drift': `${(i * 29 % 101) - 50}px`,
+        '--paper-fall': `${190 + (i * 41 % 170)}px`,
+        '--paper-turn': `${(i % 2 ? 1 : -1) * (135 + i * 11)}deg`,
+        '--paper-delay': `${(i * 7 % 17) * 0.045}s`,
+        '--paper-duration': `${1.45 + (i * 13 % 11) * 0.075}s`,
+      } as CSSProperties} />)}
+    </div>}
     <motion.div ref={experienceRef} className="conf-session-screen" data-entry-visible={showEntry} inert={showEntry || entryOpening} aria-hidden={showEntry || entryOpening}
-      initial={false} animate={{ opacity: showEntry ? 0.3 : 1, filter: showEntry && !reducedMotion ? 'blur(12px)' : 'blur(0px)' }}
-      transition={{ duration: reducedMotion ? 0.18 : 0.85, ease: [0.22, 0.68, 0.22, 1] }}>
+      initial={false} animate={{ opacity: showEntry ? 0.2 : 1, filter: showEntry && !reducedMotion ? 'blur(14px)' : 'blur(0px)', scale: showEntry && !reducedMotion ? 0.98 : 1 }}
+      transition={{ duration: reducedMotion ? 0.18 : 1.35, delay: showEntry || reducedMotion ? 0 : 0.35, ease: [0.22, 1, 0.36, 1] }}>
     <header className="conf-header">
-      <div className="conf-brand" aria-label="PEOPLIX"><img src={logo} width="36" height="36" alt="" /><span>PEOPLIX</span></div>
+      <div className="conf-brand" aria-label="Peoplix"><img src={logo} width="36" height="36" alt="" /><span>Peoplix</span></div>
     </header>
     <main className="conf-main" id="conference-main">
       <div className="conf-eyebrow"><span />THE CONFERENCE EXPERIENCE</div>
@@ -229,12 +245,12 @@ export default function ConferencePage() {
         <button className="conf-primary conf-book" type="button" onClick={() => setView('experience')}>Done</button>
       </> : done ? <>
         <div className="conf-complete-mark"><Check size={30} strokeWidth={1.3} aria-hidden="true" /></div>
-        <h1>{stage === 'expired' ? <>A moment with Ava.<br /><em>A new possibility.</em></> : <>Thanks for experiencing<br /><em>PEOPLIX.</em></>}</h1>
+        <h1>{stage === 'expired' ? <>A moment with Ava.<br /><em>A new possibility.</em></> : <>Thanks for experiencing<br /><em>Peoplix.</em></>}</h1>
         <p className="conf-description">{stage === 'expired' ? 'Your five-minute conference session has ended.' : 'Meet Ava today. Reimagine how your HR team supports employees.'}</p>
         <button className="conf-primary conf-book" type="button" onClick={() => setView('demo')}>Book a Demo <ArrowUpRight size={18} aria-hidden="true" /></button>
       </> : <>
         <h1>Meet <em>Ava.</em></h1>
-        <p className="conf-description">{stage === 'email' ? 'Experience the PEOPLIX AI HR assistant.' : 'Your AI-powered HR voice assistant.'}<br /><span>Good conversations. Better workplaces.</span></p>
+        <p className="conf-description">{stage === 'email' ? 'Experience the Peoplix AI HR assistant.' : 'Your AI-powered HR voice assistant.'}<br /><span>Good conversations. Better workplaces.</span></p>
         <VoiceSculpture active={stage === 'live'} talking={talking} />
         {stage === 'restoring' ? <p className="conf-status" role="status">Restoring your conference session…</p> : <div className="conf-conversation">
           <div className="conf-timers"><span>Session <strong>{time(sessionRemaining)}</strong></span><span>Conversation <strong>{time(callRemaining)}</strong></span></div>
@@ -254,7 +270,7 @@ export default function ConferencePage() {
         <div className="conf-bottom-notes"><span><Headphones size={14} aria-hidden="true" />Best with headphones</span><span>Designed for a real conversation</span></div>
       </>}
     </main>
-    <footer className="conf-footer"><span>PEOPLE FIRST. POWERED BY AI.</span><span>PEOPLIX <span aria-hidden="true">©</span> {new Date().getFullYear()}</span></footer>
+    <footer className="conf-footer"><span>PEOPLE FIRST. POWERED BY AI.</span><span>Peoplix <span aria-hidden="true">©</span> {new Date().getFullYear()}</span></footer>
     </motion.div>
   </div>;
 }

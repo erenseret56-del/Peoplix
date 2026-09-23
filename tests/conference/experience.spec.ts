@@ -206,6 +206,8 @@ test('accepted email opens the two surfaces and reveals sharp Ava without starti
   const samples = await frames;
   expect(samples.some(frame => frame.entry && frame.up < -10 && frame.down > 10 && frame.blur > 0 && frame.blur < 12)).toBe(true);
   await expect(page.locator('.conf-entry')).toHaveCount(0);
+  await expect(page.locator('.conf-celebration i')).toHaveCount(32);
+  await expect(page.locator('.conf-celebration')).toHaveCount(0, { timeout: 5000 });
   await expect(page.locator('.conf-session-screen')).toHaveCSS('filter', 'blur(0px)');
   await expect(page.locator('.conf-session-screen')).toHaveCSS('opacity', '1');
   await expect(page.getByRole('button', { name: 'Start Conversation' })).toBeFocused();
@@ -237,11 +239,11 @@ test('mobile Ava completion opens and submits the demo request inside conference
   await page.getByRole('button', { name: 'Mute microphone' }).click();
   await expect(page.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
   await expect(page.getByText('About 30 seconds left.', { exact: false })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Thanks for experiencing PEOPLIX.' })).toBeVisible({ timeout: 10000 });
-  await expect(page.getByText(/Back to home|Return to PEOPLIX/i)).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Thanks for experiencing Peoplix.' })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText(/Back to home|Return to Peoplix/i)).toHaveCount(0);
   await page.getByRole('button', { name: 'Book a Demo' }).click();
   await expect(page).toHaveURL(/\/conference$/);
-  await expect(page.getByRole('heading', { name: "Let's Talk About PEOPLIX" })).toBeVisible();
+  await expect(page.getByRole('heading', { name: "Let's Talk About Peoplix" })).toBeVisible();
   await expect(page.getByLabel('Work Email')).toHaveValue('visitor@example-corp.test');
   await page.getByLabel('Name').fill('Conference Visitor');
   await page.getByLabel('Company').fill('Example Corp');
@@ -275,7 +277,7 @@ test('completed email can start another session on the same device', async ({ pa
   await mockApi(page, { shortCall: true }); await mockVoice(page); await page.goto('/conference');
   await page.getByRole('button', { name: 'Skip introduction' }).click(); await enter(page);
   await page.getByRole('button', { name: 'Start Conversation' }).click();
-  await expect(page.getByRole('heading', { name: 'Thanks for experiencing PEOPLIX.' })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole('heading', { name: 'Thanks for experiencing Peoplix.' })).toBeVisible({ timeout: 10000 });
   expect(await page.evaluate(() => sessionStorage.getItem('peoplix_conference_token'))).toBeNull();
 
   await page.reload();
@@ -290,7 +292,7 @@ test('completed email can start another session on the same device', async ({ pa
 test('homepage preserves Business Value → CTA → FAQ order and navigation', async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('peoplix_intro_seen', 'true'));
   await mockApi(page); await page.goto('/');
-  const cta = page.getByRole('link', { name: 'Experience PEOPLIX Live' }); await expect(cta).toBeVisible();
+  const cta = page.getByRole('link', { name: 'Experience Peoplix Live' }); await expect(cta).toBeVisible();
   const order = await page.locator('.conference-cta').evaluate(element => ({ previous: element.previousElementSibling?.id, next: element.nextElementSibling?.textContent }));
   expect(order.previous).toBe('resources'); expect(order.next?.toLowerCase()).toContain('question');
   await cta.click(); await expect(page).toHaveURL(/\/conference$/);
@@ -377,7 +379,7 @@ for (const [role, path] of [['super_admin', '/admin/portal'], ['company_admin', 
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(value => { sessionStorage.setItem('peoplix_intro_seen', 'true'); localStorage.setItem('token', 'test-token'); localStorage.setItem('role', value); }, role);
     await mockApi(page); await page.goto(path);
-    await expect(page.getByText('Loading PEOPLIX…')).toHaveCount(0);
+    await expect(page.getByText('Loading Peoplix…')).toHaveCount(0);
     if (role === 'super_admin') await expect(page.getByRole('button', { name: 'Conference Activity' })).toBeVisible();
     else {
       await expect(page.getByRole('heading', { name: 'Call Volume Trends' })).toBeVisible();

@@ -39,8 +39,8 @@ export default function ConferenceDemoRequest({ initialEmail, conferenceSessionI
     <section className="conf-demo" aria-labelledby="conf-demo-title">
       <div className="conf-demo-heading">
         <p>CONTINUE THE CONVERSATION</p>
-        <h1 id="conf-demo-title">Let&apos;s Talk About <em>PEOPLIX</em></h1>
-        <span>Interested in bringing PEOPLIX to your organization? Leave your details and our team will get in touch.</span>
+        <h1 id="conf-demo-title">Let&apos;s Talk About <em>Peoplix</em></h1>
+        <span>Interested in bringing Peoplix to your organization? Leave your details and our team will get in touch.</span>
       </div>
       <form onSubmit={submit}>
         <div className="conf-demo-grid">

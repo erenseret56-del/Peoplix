@@ -42,7 +42,7 @@ export default function ConferenceIntro() {
 
         <img className="conf-intro-mark" src={logo} alt="" width="124" height="124" />
         <div className="conf-intro-copy">
-          <div className="conf-intro-wordmark"><span>PEOPLIX</span></div>
+          <div className="conf-intro-wordmark"><span>Peoplix</span></div>
           <div className="conf-intro-tagline">A more human kind of intelligence.</div>
         </div>
       </div>
