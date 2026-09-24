@@ -123,10 +123,8 @@ test('conference intro stays centered and borderless across viewport sizes', asy
         viewport: { width: innerWidth, height: innerHeight },
         intro: { width: intro.width, height: intro.height },
         art: rect('.conf-intro-art'),
-        mark: rect('.conf-intro-mark'),
         wordmark: rect('.conf-intro-wordmark'),
         tagline: rect('.conf-intro-tagline'),
-        skip: rect('.conf-intro-skip'),
         artChrome: { border: artStyle.borderStyle, background: artStyle.backgroundColor, shadow: artStyle.boxShadow },
         taglineWhiteSpace: taglineStyle.whiteSpace,
       };
@@ -136,89 +134,57 @@ test('conference intro stays centered and borderless across viewport sizes', asy
     expect(layout.intro.height).toBeCloseTo(layout.viewport.height, 0);
     expect(layout.art.centerX).toBeCloseTo(layout.viewport.width / 2, 0);
     expect(layout.art.centerY).toBeCloseTo(layout.viewport.height / 2, 0);
-    expect(layout.mark.centerX).toBeCloseTo(layout.viewport.width / 2, 0);
     expect(layout.wordmark.centerX).toBeCloseTo(layout.viewport.width / 2, 0);
     expect(layout.tagline.centerX).toBeCloseTo(layout.viewport.width / 2, 0);
     expect(layout.taglineWhiteSpace).toBe('nowrap');
     expect(layout.artChrome).toEqual({ border: 'none', background: 'rgba(0, 0, 0, 0)', shadow: 'none' });
-    expect(layout.skip.right).toBeLessThanOrEqual(layout.viewport.width);
-    expect(layout.skip.bottom).toBeLessThanOrEqual(layout.viewport.height);
-    expect(layout.skip.left).toBeGreaterThanOrEqual(0);
-    expect(layout.skip.top).toBeGreaterThanOrEqual(0);
 
-    await page.waitForTimeout(3700);
+    await page.locator('.conf-intro').evaluate(intro => {
+      intro.getAnimations({ subtree: true }).forEach(animation => { animation.pause(); animation.currentTime = 3000; });
+    });
     await page.screenshot({ path: `test-results/conference-intro-${viewport.name}.png` });
   }
 });
 
-test('one living waveform enters an empty vector P and replays cleanly', async ({ page }) => {
-  await page.setViewportSize({ width: 900, height: 1600 });
+test('wordmark strokes resolve into solid text before the slower handoff', async ({ page }) => {
+  await page.clock.install();
   await mockApi(page); await page.goto('/conference');
+  await expect(page.locator('.conf-intro')).toBeVisible();
   const states = await page.locator('.conf-intro').evaluate(intro => {
     const animations = intro.getAnimations({ subtree: true });
-    const sample = (ms: number) => {
-      animations.forEach(animation => { animation.pause(); animation.currentTime = ms; });
-      const bars = Array.from(intro.querySelectorAll('.conf-intro-wave i')).map(element => element.getBoundingClientRect());
-      const logo = intro.querySelector('.conf-intro-mark')!.getBoundingClientRect();
-      const wave = intro.querySelector('.conf-intro-wave')!.getBoundingClientRect();
+    const sample = (time: number) => {
+      animations.forEach(animation => { animation.pause(); animation.currentTime = time; });
       return {
-        barVerticalSpan: Math.max(...bars.map(bar => bar.bottom)) - Math.min(...bars.map(bar => bar.top)),
-        logoOpacity: Number(getComputedStyle(intro.querySelector('.conf-intro-mark')!).opacity),
-        wordmarkOpacity: Number(getComputedStyle(intro.querySelector('.conf-intro-wordmark span')!).opacity),
-        taglineOpacity: Number(getComputedStyle(intro.querySelector('.conf-intro-tagline')!).opacity),
-        waveCenterX: wave.left + wave.width / 2,
-        waveWidth: wave.width,
-        waveOpacity: Number(getComputedStyle(intro.querySelector('.conf-intro-wave')!).opacity),
-        logoCenterX: logo.left + logo.width / 2,
-        logoCenterY: logo.top + logo.height / 2,
-        waveCenterY: wave.top + wave.height / 2,
+        stroke: getComputedStyle(intro.querySelector('.conf-intro-stroke')!).strokeDashoffset,
+        ink: Number(getComputedStyle(intro.querySelector('.conf-intro-fill')!).opacity),
+        tagline: Number(getComputedStyle(intro.querySelector('.conf-intro-tagline')!).opacity),
+        opacity: Number(getComputedStyle(intro).opacity),
       };
     };
-    return { waveCount: intro.querySelectorAll('.conf-intro-wave').length, barCount: intro.querySelectorAll('.conf-intro-wave i').length,
-      rasterCount: intro.querySelectorAll('img').length, vectorCount: intro.querySelectorAll('.conf-intro-mark path').length,
-      expansionCount: intro.querySelectorAll('.conf-intro-layers').length,
-      forming: sample(1700), emptyP: sample(4200), merge: sample(7000), lockup: sample(9400) };
-  });
-  expect(states.waveCount).toBe(1);
-  expect(states.barCount).toBe(31);
-  expect(states.rasterCount).toBe(0);
-  expect(states.vectorCount).toBe(3);
-  expect(states.expansionCount).toBe(0);
-  expect(states.forming.logoOpacity).toBe(0);
-  expect(states.emptyP.logoOpacity).toBe(1);
-  expect(Math.abs(states.emptyP.waveCenterX - states.emptyP.logoCenterX)).toBeGreaterThan(70);
-  expect(states.emptyP.barVerticalSpan).toBeLessThan(100);
-  expect(states.merge.waveWidth).toBeLessThan(100);
-  expect(Math.abs(states.merge.waveCenterX - states.merge.logoCenterX)).toBeLessThan(35);
-  expect(Math.abs(states.lockup.waveCenterY - states.lockup.logoCenterY)).toBeLessThan(25);
-  expect(states.lockup.waveOpacity).toBe(1);
-  expect(states.lockup.wordmarkOpacity).toBe(1);
-  expect(states.lockup.taglineOpacity).toBe(1);
-  await page.getByRole('button', { name: 'Skip introduction' }).click();
-  await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 2000 });
-  await expect(page.getByRole('heading', { name: 'Meet Ava.' })).toBeVisible();
-  await page.reload();
-  await expect(page.locator('.conf-intro-wave')).toHaveCount(1);
-  await expect(page.locator('.conf-intro-wave i')).toHaveCount(31);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.reload();
-  const mobile = await page.locator('.conf-intro').evaluate(intro => {
-    const sample = (ms: number) => {
-      intro.getAnimations({ subtree: true }).forEach(animation => { animation.pause(); animation.currentTime = ms; });
-      const wave = intro.querySelector('.conf-intro-wave')!.getBoundingClientRect();
-      const mark = intro.querySelector('.conf-intro-mark')!.getBoundingClientRect();
-      return { waveX: wave.left + wave.width / 2, markX: mark.left + mark.width / 2, waveRight: wave.right };
+    return {
+      text: intro.querySelector('.conf-intro-fill')!.textContent,
+      artworkCount: intro.querySelectorAll('img, canvas, .conf-intro-wave, .conf-intro-mark').length,
+      clean: sample(100), forming: sample(1000), resolved: sample(2350), settled: sample(3000), handoff: sample(3250),
     };
-    return { empty: sample(4200), lockup: sample(9400) };
   });
-  expect(Math.abs(mobile.empty.waveX - mobile.empty.markX)).toBeGreaterThan(55);
-  expect(mobile.empty.waveRight).toBeLessThan(390);
-  expect(Math.abs(mobile.lockup.waveX - mobile.lockup.markX)).toBeLessThan(10);
+  expect(states.text).toBe('Peoplix');
+  expect(states.artworkCount).toBe(0);
+  expect(states.clean.ink).toBe(0);
+  expect(states.forming.ink).toBe(0);
+  expect(states.forming.stroke).not.toBe(states.clean.stroke);
+  expect(states.resolved.ink).toBeGreaterThan(.95);
+  expect(states.resolved.tagline).toBe(0);
+  expect(states.settled.tagline).toBe(1);
+  expect(states.handoff.opacity).toBeGreaterThan(0);
+  expect(states.handoff.opacity).toBeLessThan(1);
+  await page.clock.runFor(3400);
+  await expect(page.locator('.conf-intro')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Meet Ava.' })).toBeVisible();
 });
 for (const { width, height } of [{ width: 390, height: 844 }, { width: 844, height: 390 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 1000 }]) {
   test(`responsive conference at ${width}px has usable form and no horizontal overflow`, async ({ page }) => {
     await page.setViewportSize({ width, height }); await mockApi(page); await page.goto('/conference');
-    await page.getByRole('button', { name: 'Skip introduction' }).click();
+    await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 4500 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const input = await page.getByLabel('Enter your work email').boundingBox(); expect(input!.height).toBeGreaterThanOrEqual(44);
     const logo = await page.locator('.conf-entry-logo').boundingBox();
@@ -243,7 +209,7 @@ test('accepted email opens the two surfaces and reveals sharp Ava without starti
     if (new URL(request.url()).pathname === '/api/conference/call') callRequests += 1;
   });
   await page.goto('/conference');
-  await page.getByRole('button', { name: 'Skip introduction' }).click();
+  await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 4500 });
   await page.getByLabel('Enter your work email').fill('visitor@gmail.com');
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Meet Ava', exact: true }).click();
@@ -298,7 +264,7 @@ test('mobile Ava completion opens and submits the demo request inside conference
   let demoPayload: Record<string, string> | undefined;
   await page.setViewportSize({ width: 390, height: 844 });
   await mockApi(page, { shortCall: true, onDemoRequest: payload => { demoPayload = payload; } }); await mockVoice(page); await page.goto('/conference');
-  await page.getByRole('button', { name: 'Skip introduction' }).click(); await enter(page);
+  await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 4500 }); await enter(page);
   await page.getByRole('button', { name: 'Start Conversation' }).click();
   await expect(page.getByRole('button', { name: 'Mute microphone' })).toBeEnabled();
   await page.getByRole('button', { name: 'Mute microphone' }).click();
@@ -340,7 +306,7 @@ test('pending refresh shows email entry while an active call still restores', as
 
 test('completed email can start another session on the same device', async ({ page }) => {
   await mockApi(page, { shortCall: true }); await mockVoice(page); await page.goto('/conference');
-  await page.getByRole('button', { name: 'Skip introduction' }).click(); await enter(page);
+  await expect(page.locator('.conf-intro')).toHaveCount(0, { timeout: 4500 }); await enter(page);
   await page.getByRole('button', { name: 'Start Conversation' }).click();
   await expect(page.getByRole('heading', { name: 'Thanks for experiencing Peoplix.' })).toBeVisible({ timeout: 10000 });
   expect(await page.evaluate(() => sessionStorage.getItem('peoplix_conference_token'))).toBeNull();
